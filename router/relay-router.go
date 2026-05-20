@@ -70,6 +70,11 @@ func SetRelayRouter(router *gin.Engine) {
 	relayV1Router.Use(middleware.RouteTag("relay"))
 	relayV1Router.Use(middleware.SystemPerformanceCheck())
 	relayV1Router.Use(middleware.TokenAuth())
+	// cf-fork: attach business audit headers + soften per-token quota /
+	// model-limit gates for `cf-platform-*` service tokens. Must run
+	// after TokenAuth (relies on token_name context key) and before
+	// ModelRequestRateLimit / Distribute.
+	relayV1Router.Use(middleware.CfBusinessAudit())
 	relayV1Router.Use(middleware.ModelRequestRateLimit())
 	{
 		// WebSocket 路由（统一到 Relay）

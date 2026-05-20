@@ -213,6 +213,22 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 	username := c.GetString("username")
 	requestId := c.GetString(common.RequestIdKey)
 	upstreamRequestId := c.GetString(common.UpstreamRequestIdKey)
+	// cf-fork: attach Canvas Flow business audit headers if set by the
+	// CfBusinessAudit middleware. Stored inside Other JSON so vendor
+	// schema migrations don't need adjustment; admin-web log viewer
+	// reads cf_tenant_id / cf_end_user out of Other to filter by tenant.
+	if cfTenantId, ok := c.Get("cf_tenant_id"); ok {
+		if params.Other == nil {
+			params.Other = make(map[string]interface{})
+		}
+		params.Other["cf_tenant_id"] = cfTenantId
+	}
+	if cfEndUser, ok := c.Get("cf_end_user"); ok {
+		if params.Other == nil {
+			params.Other = make(map[string]interface{})
+		}
+		params.Other["cf_end_user"] = cfEndUser
+	}
 	otherStr := common.MapToJsonStr(params.Other)
 	// 判断是否需要记录 IP
 	needRecordIp := false

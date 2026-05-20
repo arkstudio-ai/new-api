@@ -18,7 +18,10 @@ func SetVideoRouter(router *gin.Engine) {
 
 	videoV1Router := router.Group("/v1")
 	videoV1Router.Use(middleware.RouteTag("relay"))
-	videoV1Router.Use(middleware.TokenAuth(), middleware.Distribute())
+	// cf-fork: CfBusinessAudit attaches Canvas Flow business headers +
+	// softens per-token gates for cf-platform-* service tokens. Inserted
+	// between TokenAuth (sets token_name) and Distribute (uses token_id).
+	videoV1Router.Use(middleware.TokenAuth(), middleware.CfBusinessAudit(), middleware.Distribute())
 	{
 		videoV1Router.POST("/video/generations", controller.RelayTask)
 		videoV1Router.GET("/video/generations/:task_id", controller.RelayTaskFetch)
