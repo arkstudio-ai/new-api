@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -22,6 +24,31 @@ import (
 	"github.com/pkg/errors"
 	"github.com/samber/lo"
 )
+
+// resolveDoubaoTaskPrefix returns the upstream URL prefix up to (and
+// including) the equivalent of 火山方舟 `/api/v3`. The official endpoint
+// requires the channel base_url to be just `https://host` and the adapter
+// to append `/api/v3`. Some compatible proxies, however, expose this same
+// surface at a different path (e.g. `http://host/seedance` means
+// "/seedance" is already the equivalent of /api/v3). In that case we MUST
+// NOT double-append /api/v3 or upstream returns 404.
+//
+// Heuristic: if base already has a non-root URL path, trust the operator
+// and append the trailing endpoint verbatim. Otherwise default to /api/v3.
+func resolveDoubaoTaskPrefix(baseURL string) string {
+	base := strings.TrimRight(baseURL, "/")
+	if base == "" {
+		// Caller will tack the trailing endpoint on; with empty base, the
+		// existing default-host logic in adapter init has already kicked in.
+		return ""
+	}
+	if parsed, err := url.Parse(base); err == nil {
+		if parsed.Path != "" && parsed.Path != "/" {
+			return base
+		}
+	}
+	return base + "/api/v3"
+}
 
 // ============================
 // Request / Response structures
@@ -121,7 +148,7 @@ func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycom
 
 // BuildRequestURL constructs the upstream URL.
 func (a *TaskAdaptor) BuildRequestURL(_ *relaycommon.RelayInfo) (string, error) {
-	return fmt.Sprintf("%s/api/v3/contents/generations/tasks", a.baseURL), nil
+	return resolveDoubaoTaskPrefix(a.baseURL) + "/contents/generations/tasks", nil
 }
 
 // BuildRequestHeader sets required headers.
@@ -241,7 +268,7 @@ func (a *TaskAdaptor) FetchTask(baseUrl, key string, body map[string]any, proxy 
 		return nil, fmt.Errorf("invalid task_id")
 	}
 
-	uri := fmt.Sprintf("%s/api/v3/contents/generations/tasks/%s", baseUrl, taskID)
+	uri := fmt.Sprintf("%s/contents/generations/tasks/%s", resolveDoubaoTaskPrefix(baseUrl), taskID)
 
 	req, err := http.NewRequest(http.MethodGet, uri, nil)
 	if err != nil {
