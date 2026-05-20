@@ -77,8 +77,13 @@ services:
       - pg_data:/var/lib/postgresql/data
     networks:
       - new-api-network
-#    ports:
-#      - "5432:5432"  # Uncomment if you need to access PostgreSQL from outside Docker
+    # cf-fork: expose new-api's postgres to the host so master-api (a host
+    # node process, not in the docker network) can read the logs table
+    # directly for usage reconciliation. 5435 -> 5432 inside the
+    # container; non-default host port chosen to avoid clashing with
+    # cf-master-pg :5432.
+    ports:
+      - "5435:5432"
 
 #  mysql:
 #    image: mysql:8.2
