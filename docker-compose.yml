@@ -16,7 +16,12 @@ version: '3.4' # For compatibility with older Docker versions
 
 services:
   new-api:
-    image: calciumion/new-api:latest
+    # 本地源码 build (cf 自家定制 / 跟上 vendor main 分支)，替换 hub 公开镜像 :latest
+    # vanilla 镜像滞后于源码，看不到 Seedance 2.0 等近期适配。
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: cf-new-api:local
     container_name: new-api
     restart: always
     command: --log-dir /app/logs
