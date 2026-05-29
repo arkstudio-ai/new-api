@@ -1738,6 +1738,88 @@ export function ChannelMutateDrawer({
                       />
                     )}
 
+                    {/* VolcEngine (45) / Doubao Video (54) - Asset library AK/SK + default ProjectName */}
+                    {(currentType === 45 || currentType === 54) && (
+                      <>
+                        <FormField
+                          control={form.control}
+                          name='volc_access_key'
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>{t('Asset API AccessKey')}</FormLabel>
+                              <FormControl>
+                                <Input
+                                  type='password'
+                                  autoComplete='off'
+                                  placeholder={t(
+                                    'Leave blank to keep the existing value'
+                                  )}
+                                  {...field}
+                                />
+                              </FormControl>
+                              <FormDescription>
+                                {t(
+                                  'VolcEngine AccessKey for the Asset (material library) API. Used for AK/SK signing, separate from the channel API Key.'
+                                )}
+                              </FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name='volc_secret_key'
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>{t('Asset API SecretKey')}</FormLabel>
+                              <FormControl>
+                                <Input
+                                  type='password'
+                                  autoComplete='off'
+                                  placeholder={t(
+                                    'Leave blank to keep the existing value'
+                                  )}
+                                  {...field}
+                                />
+                              </FormControl>
+                              <FormDescription>
+                                {t(
+                                  'VolcEngine SecretKey for the Asset (material library) API.'
+                                )}
+                              </FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name='volc_project_name'
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>
+                                {t('Asset API default ProjectName')}
+                              </FormLabel>
+                              <FormControl>
+                                <Input
+                                  autoComplete='off'
+                                  placeholder={t(
+                                    'VolcEngine ProjectName, optional'
+                                  )}
+                                  {...field}
+                                />
+                              </FormControl>
+                              <FormDescription>
+                                {t(
+                                  'When a request body omits ProjectName, the gateway injects this value; if the caller provides one, the caller value is used.'
+                                )}
+                              </FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </>
+                    )}
+
                     {/* Coze (type 49) */}
                     {currentType === 49 && (
                       <FormField

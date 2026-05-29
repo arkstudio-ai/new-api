@@ -186,6 +186,9 @@ export const channelFormSchema = z
     is_enterprise_account: z.boolean().optional(), // OpenRouter specific
     vertex_key_type: z.enum(['json', 'api_key']).optional(), // Vertex AI specific
     aws_key_type: z.enum(['ak_sk', 'api_key']).optional(), // AWS specific
+    volc_access_key: z.string().optional(), // VolcEngine Asset API specific
+    volc_secret_key: z.string().optional(), // VolcEngine Asset API specific
+    volc_project_name: z.string().optional(), // VolcEngine Asset API default ProjectName
     azure_responses_version: z.string().optional(), // Azure specific
     // Field passthrough controls (stored in settings JSON)
     allow_service_tier: z.boolean().optional(), // OpenAI/Anthropic
@@ -304,6 +307,9 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   is_enterprise_account: false,
   vertex_key_type: 'json',
   aws_key_type: 'ak_sk',
+  volc_access_key: '',
+  volc_secret_key: '',
+  volc_project_name: '',
   azure_responses_version: '',
   // Field passthrough controls
   allow_service_tier: false,
@@ -360,6 +366,7 @@ export function transformChannelToFormDefaults(
   let azureResponsesVersion = ''
   let isEnterpriseAccount = false
   let awsKeyType: 'ak_sk' | 'api_key' = 'ak_sk'
+  let volcProjectName = ''
   let allowServiceTier = false
   let disableStore = false
   let allowSafetyIdentifier = false
@@ -378,6 +385,7 @@ export function transformChannelToFormDefaults(
       azureResponsesVersion = parsed.azure_responses_version || ''
       isEnterpriseAccount = parsed.openrouter_enterprise === true
       awsKeyType = parsed.aws_key_type || 'ak_sk'
+      volcProjectName = parsed.volc_project_name || ''
       allowServiceTier = parsed.allow_service_tier === true
       disableStore = parsed.disable_store === true
       allowSafetyIdentifier = parsed.allow_safety_identifier === true
@@ -433,6 +441,7 @@ export function transformChannelToFormDefaults(
     vertex_key_type: vertexKeyType,
     azure_responses_version: azureResponsesVersion,
     aws_key_type: awsKeyType,
+    volc_project_name: volcProjectName,
     allow_service_tier: allowServiceTier,
     disable_store: disableStore,
     allow_include_obfuscation: allowIncludeObfuscation,
@@ -503,6 +512,23 @@ function buildSettingsJSON(formData: ChannelFormValues): string {
     settingsObj.aws_key_type = formData.aws_key_type || 'ak_sk'
   } else if ('aws_key_type' in settingsObj) {
     delete settingsObj.aws_key_type
+  }
+
+  // Add VolcEngine Asset API AK/SK + default ProjectName for VolcEngine (45)
+  // and Doubao Video (54) channels. Credentials are never echoed back, so only
+  // overwrite when a non-empty value is provided; ProjectName is not secret.
+  if (formData.type === 45 || formData.type === 54) {
+    if (formData.volc_access_key) {
+      settingsObj.volc_access_key = formData.volc_access_key
+    }
+    if (formData.volc_secret_key) {
+      settingsObj.volc_secret_key = formData.volc_secret_key
+    }
+    settingsObj.volc_project_name = (formData.volc_project_name || '').trim()
+  } else {
+    if ('volc_access_key' in settingsObj) delete settingsObj.volc_access_key
+    if ('volc_secret_key' in settingsObj) delete settingsObj.volc_secret_key
+    if ('volc_project_name' in settingsObj) delete settingsObj.volc_project_name
   }
 
   // Field passthrough controls:
