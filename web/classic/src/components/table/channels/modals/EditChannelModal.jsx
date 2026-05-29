@@ -3480,6 +3480,9 @@ const EditChannelModal = (props) => {
                             placeholder={t('留空则保持原有值')}
                             mode='password'
                             autoComplete='new-password'
+                            onChange={(value) =>
+                              handleInputChange('volc_access_key', value)
+                            }
                             extraText={t(
                               '火山引擎 Asset（素材库）API 的 AccessKey，用于 AK/SK 签名，与渠道 API Key 区分',
                             )}
@@ -3490,6 +3493,9 @@ const EditChannelModal = (props) => {
                             placeholder={t('留空则保持原有值')}
                             mode='password'
                             autoComplete='new-password'
+                            onChange={(value) =>
+                              handleInputChange('volc_secret_key', value)
+                            }
                             extraText={t('火山引擎 Asset（素材库）API 的 SecretKey')}
                           />
                           <Form.Input
