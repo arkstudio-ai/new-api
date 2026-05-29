@@ -67,6 +67,7 @@ export const channelFormSchema = z.object({
   aws_key_type: z.enum(['ak_sk', 'api_key']).optional(), // AWS specific
   volc_access_key: z.string().optional(), // VolcEngine Asset API specific
   volc_secret_key: z.string().optional(), // VolcEngine Asset API specific
+  volc_project_name: z.string().optional(), // VolcEngine Asset API default ProjectName
   azure_responses_version: z.string().optional(), // Azure specific
   // Field passthrough controls (stored in settings JSON)
   allow_service_tier: z.boolean().optional(), // OpenAI/Anthropic
@@ -127,6 +128,7 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   aws_key_type: 'ak_sk',
   volc_access_key: '',
   volc_secret_key: '',
+  volc_project_name: '',
   azure_responses_version: '',
   // Field passthrough controls
   allow_service_tier: false,
@@ -193,6 +195,7 @@ export function transformChannelToFormDefaults(
   let upstreamModelUpdateCheckEnabled = false
   let upstreamModelUpdateAutoSyncEnabled = false
   let upstreamModelUpdateIgnoredModels = ''
+  let volcProjectName = ''
 
   if (channel.settings) {
     try {
@@ -201,6 +204,7 @@ export function transformChannelToFormDefaults(
       azureResponsesVersion = parsed.azure_responses_version || ''
       isEnterpriseAccount = parsed.openrouter_enterprise === true
       awsKeyType = parsed.aws_key_type || 'ak_sk'
+      volcProjectName = parsed.volc_project_name || ''
       allowServiceTier = parsed.allow_service_tier === true
       disableStore = parsed.disable_store === true
       allowSafetyIdentifier = parsed.allow_safety_identifier === true
@@ -256,6 +260,7 @@ export function transformChannelToFormDefaults(
     vertex_key_type: vertexKeyType,
     azure_responses_version: azureResponsesVersion,
     aws_key_type: awsKeyType,
+    volc_project_name: volcProjectName,
     allow_service_tier: allowServiceTier,
     disable_store: disableStore,
     allow_include_obfuscation: allowIncludeObfuscation,
@@ -328,16 +333,18 @@ function buildSettingsJSON(formData: ChannelFormValues): string {
     delete settingsObj.aws_key_type
   }
 
-  // Add VolcEngine Asset API AK/SK for VolcEngine channels (type 45).
-  // Credentials are never echoed back to the form, so only overwrite when a
-  // non-empty value is provided; an empty input keeps the previously stored value.
-  if (formData.type === 45) {
+  // Add VolcEngine Asset API AK/SK + default ProjectName for VolcEngine (45)
+  // and Doubao Video (54) channels. Credentials are never echoed back, so only
+  // overwrite when a non-empty value is provided (empty keeps the stored value);
+  // ProjectName is not secret, so it is written as-is (empty clears it).
+  if (formData.type === 45 || formData.type === 54) {
     if (formData.volc_access_key) {
       settingsObj.volc_access_key = formData.volc_access_key
     }
     if (formData.volc_secret_key) {
       settingsObj.volc_secret_key = formData.volc_secret_key
     }
+    settingsObj.volc_project_name = (formData.volc_project_name || '').trim()
   }
 
   // Field passthrough controls:

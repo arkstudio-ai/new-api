@@ -2,6 +2,7 @@ package controller
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -54,12 +55,48 @@ func volcAssetCall(c *gin.Context, action string, body []byte) (*model.Channel, 
 	}
 	settings := channel.GetOtherSettings()
 	proxy := channel.GetSetting().Proxy
+	// 请求体未带 ProjectName 时，注入渠道配置的默认项目名（带了则用调用方的）。
+	body = injectDefaultProjectName(body, settings.VolcProjectName)
 	result, err := volcasset.Call(c.Request.Context(), settings.VolcAccessKey, settings.VolcSecretKey, action, body, proxy)
 	if err != nil {
 		volcAssetError(c, http.StatusInternalServerError, err.Error())
 		return nil, nil, false
 	}
 	return channel, result, true
+}
+
+// injectDefaultProjectName 在请求体缺少（或为空）ProjectName 时写入渠道默认值 def。
+// 解析失败或 def 为空时原样返回，保证不破坏既有请求。
+func injectDefaultProjectName(body []byte, def string) []byte {
+	if strings.TrimSpace(def) == "" {
+		return body
+	}
+	var m map[string]any
+	if len(body) == 0 {
+		m = map[string]any{}
+	} else if err := common.Unmarshal(body, &m); err != nil || m == nil {
+		return body
+	}
+	if pn, ok := m["ProjectName"].(string); ok && strings.TrimSpace(pn) != "" {
+		return body // 调用方已显式指定，尊重之
+	}
+	m["ProjectName"] = def
+	out, err := common.Marshal(m)
+	if err != nil {
+		return body
+	}
+	return out
+}
+
+// effectiveProjectName 返回用于本地归属记录的项目名：优先请求体值，否则取渠道默认。
+func effectiveProjectName(reqProjectName string, channel *model.Channel) string {
+	if strings.TrimSpace(reqProjectName) != "" {
+		return reqProjectName
+	}
+	if channel != nil {
+		return channel.GetOtherSettings().VolcProjectName
+	}
+	return reqProjectName
 }
 
 func volcAssetIsSuccess(result *volcasset.CallResult) bool {
@@ -102,7 +139,7 @@ func VolcCreateAssetGroup(c *gin.Context) {
 		if res.Result.Id != "" {
 			req := parseVolcRequestBody(body)
 			_ = model.RecordVolcAssetGroup(c.GetInt("token_id"), c.GetInt("id"), channel.Id,
-				res.Result.Id, req.Name, req.ProjectName)
+				res.Result.Id, req.Name, effectiveProjectName(req.ProjectName, channel))
 		}
 	}
 	writeVolcRaw(c, result)
@@ -207,7 +244,7 @@ func VolcCreateAsset(c *gin.Context) {
 		res := parseVolcResult(result.Body)
 		if res.Result.Id != "" {
 			_ = model.RecordVolcAsset(c.GetInt("token_id"), c.GetInt("id"), channel.Id,
-				res.Result.Id, req.GroupId, req.Name, "Image", req.ProjectName)
+				res.Result.Id, req.GroupId, req.Name, "Image", effectiveProjectName(req.ProjectName, channel))
 		}
 	}
 	writeVolcRaw(c, result)

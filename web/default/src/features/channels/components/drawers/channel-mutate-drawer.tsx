@@ -1767,8 +1767,8 @@ export function ChannelMutateDrawer({
                   />
                 )}
 
-                {/* VolcEngine (type 45) - Asset library AK/SK (optional) */}
-                {currentType === 45 && (
+                {/* VolcEngine (45) / Doubao Video (54) - Asset library AK/SK + default ProjectName (optional) */}
+                {(currentType === 45 || currentType === 54) && (
                   <>
                     <FormField
                       control={form.control}
@@ -1814,6 +1814,32 @@ export function ChannelMutateDrawer({
                           <FormDescription>
                             {t(
                               'VolcEngine SecretKey for the Asset (material library) API.'
+                            )}
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name='volc_project_name'
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>
+                            {t('Asset API default ProjectName')}
+                          </FormLabel>
+                          <FormControl>
+                            <Input
+                              autoComplete='off'
+                              placeholder={t(
+                                'VolcEngine ProjectName, optional'
+                              )}
+                              {...field}
+                            />
+                          </FormControl>
+                          <FormDescription>
+                            {t(
+                              'When a request body omits ProjectName, the gateway injects this value; if the caller provides one, the caller value is used.'
                             )}
                           </FormDescription>
                           <FormMessage />

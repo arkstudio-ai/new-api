@@ -59,8 +59,11 @@ func GetVolcAssetChannelByGroup(group string) (*Channel, error) {
 		return nil, fmt.Errorf("token group is empty")
 	}
 	var channels []*Channel
-	query := DB.Where("type = ? AND status = ?",
-		constant.ChannelTypeVolcEngine, common.ChannelStatusEnabled)
+	// 火山系渠道：方舟/豆包通用(45) 与 豆包视频(54) 都走火山 OpenAPI（同一 ark 端点、
+	// 同一套 AK/SK），Asset 素材库 AK/SK 可挂在其中任一渠道上。
+	query := DB.Where("type IN ? AND status = ?",
+		[]int{constant.ChannelTypeVolcEngine, constant.ChannelTypeDoubaoVideo},
+		common.ChannelStatusEnabled)
 	query = ApplyChannelGroupFilter(query, group)
 	if err := query.Order("priority DESC").Find(&channels).Error; err != nil {
 		return nil, err
