@@ -335,6 +335,37 @@ func VolcUpdateAsset(c *gin.Context) {
 	writeVolcRaw(c, result)
 }
 
+// VolcDeleteAsset POST /open/DeleteAsset
+func VolcDeleteAsset(c *gin.Context) {
+	body, err := c.GetRawData()
+	if err != nil {
+		volcAssetError(c, http.StatusBadRequest, "failed to read request body")
+		return
+	}
+	req := parseVolcRequestBody(body)
+	if req.Id == "" {
+		volcAssetError(c, http.StatusBadRequest, "Id is required")
+		return
+	}
+	owned, ownErr := model.IsVolcAssetOwnedByToken(c.GetInt("token_id"), req.Id)
+	if ownErr != nil {
+		volcAssetError(c, http.StatusInternalServerError, ownErr.Error())
+		return
+	}
+	if !owned {
+		volcAssetError(c, http.StatusForbidden, "asset does not belong to current token")
+		return
+	}
+	_, result, ok := volcAssetCall(c, "DeleteAsset", body)
+	if !ok {
+		return
+	}
+	if volcAssetIsSuccess(result) {
+		_ = model.DeleteVolcAssetByToken(c.GetInt("token_id"), req.Id)
+	}
+	writeVolcRaw(c, result)
+}
+
 // ============================
 // 辅助：归属校验与过滤
 // ============================

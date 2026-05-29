@@ -23,5 +23,6 @@ func SetVolcAssetRouter(router *gin.Engine) {
 		openRouter.POST("/GetAssetGroup", controller.VolcGetAssetGroup)
 		openRouter.POST("/UpdateAssetGroup", controller.VolcUpdateAssetGroup)
 		openRouter.POST("/UpdateAsset", controller.VolcUpdateAsset)
+		openRouter.POST("/DeleteAsset", controller.VolcDeleteAsset)
 	}
 }

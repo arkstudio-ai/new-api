@@ -40,6 +40,7 @@ var allowedActions = map[string]bool{
 	"GetAssetGroup":    true,
 	"UpdateAssetGroup": true,
 	"UpdateAsset":      true,
+	"DeleteAsset":      true,
 }
 
 // IsAllowedAction 返回该 Action 是否在 Asset 转发白名单内。

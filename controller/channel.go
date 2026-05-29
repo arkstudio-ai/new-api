@@ -69,6 +69,46 @@ func clearChannelInfo(channel *model.Channel) {
 	}
 }
 
+// preserveVolcAssetSecrets 实现火山 Asset AK/SK 的「留空 = 保持原值」语义。
+// 这两个字段是敏感凭证，前端不一定回显；编辑渠道其它字段时若提交了空值，
+// 不应覆盖库里已存的凭证。仅当本次显式提供非空值时才更新。
+// 采用 map 级合并以保留 settings 中的其它字段（如 upstream_model_update_* 等）。
+func preserveVolcAssetSecrets(incoming, origin string) string {
+	if strings.TrimSpace(origin) == "" {
+		return incoming
+	}
+	var originMap map[string]any
+	if err := common.UnmarshalJsonStr(origin, &originMap); err != nil || originMap == nil {
+		return incoming
+	}
+	incomingMap := map[string]any{}
+	if strings.TrimSpace(incoming) != "" {
+		if err := common.UnmarshalJsonStr(incoming, &incomingMap); err != nil || incomingMap == nil {
+			return incoming
+		}
+	}
+	changed := false
+	for _, k := range []string{"volc_access_key", "volc_secret_key"} {
+		if newVal, _ := incomingMap[k].(string); strings.TrimSpace(newVal) != "" {
+			continue // 本次显式提供，尊重调用方
+		}
+		oldVal, _ := originMap[k].(string)
+		if strings.TrimSpace(oldVal) == "" {
+			continue
+		}
+		incomingMap[k] = oldVal
+		changed = true
+	}
+	if !changed {
+		return incoming
+	}
+	out, err := common.Marshal(incomingMap)
+	if err != nil {
+		return incoming
+	}
+	return string(out)
+}
+
 func applyChannelStatusFilter(query *gorm.DB, statusFilter int) *gorm.DB {
 	if statusFilter == common.ChannelStatusEnabled {
 		return query.Where("status = ?", common.ChannelStatusEnabled)
@@ -974,6 +1014,12 @@ func UpdateChannel(c *gin.Context) {
 			// 覆盖模式：直接使用新密钥（默认行为，不需要特殊处理）
 		}
 	}
+
+	// 火山 Asset AK/SK 为敏感字段，前端语义为「留空 = 保持原值」。
+	// 兜底：若本次更新未携带（或置空）AK/SK，则沿用原渠道已存的值，
+	// 避免编辑其它字段（如分组）时把素材库凭证误清空。ProjectName 非敏感，留空即清空，不在此保护。
+	channel.OtherSettings = preserveVolcAssetSecrets(channel.OtherSettings, originChannel.OtherSettings)
+
 	err = channel.Update()
 	if err != nil {
 		common.ApiError(c, err)

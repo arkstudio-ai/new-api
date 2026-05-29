@@ -176,6 +176,13 @@ func IsVolcAssetOwnedByToken(tokenId int, volcAssetId string) (bool, error) {
 	return count > 0, nil
 }
 
+// DeleteVolcAssetByToken 删除指定令牌下某个火山 Asset 的本地归属记录。
+// 上游删除成功后调用，保持本地归属表与火山侧一致。
+func DeleteVolcAssetByToken(tokenId int, volcAssetId string) error {
+	return DB.Where("token_id = ? AND volc_asset_id = ?", tokenId, volcAssetId).
+		Delete(&VolcAsset{}).Error
+}
+
 // UpdateVolcAssetMeta 更新本地 Asset 记录的名称 / 状态等信息（归属不变）。
 func UpdateVolcAssetMeta(tokenId int, volcAssetId string, name, status string) error {
 	updates := map[string]any{
