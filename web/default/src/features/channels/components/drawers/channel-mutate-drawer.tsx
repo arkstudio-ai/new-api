@@ -1767,6 +1767,62 @@ export function ChannelMutateDrawer({
                   />
                 )}
 
+                {/* VolcEngine (type 45) - Asset library AK/SK (optional) */}
+                {currentType === 45 && (
+                  <>
+                    <FormField
+                      control={form.control}
+                      name='volc_access_key'
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{t('Asset API AccessKey')}</FormLabel>
+                          <FormControl>
+                            <Input
+                              type='password'
+                              autoComplete='off'
+                              placeholder={t(
+                                'Leave blank to keep the existing value'
+                              )}
+                              {...field}
+                            />
+                          </FormControl>
+                          <FormDescription>
+                            {t(
+                              'VolcEngine AccessKey for the Asset (material library) API. Used for AK/SK signing, separate from the channel API Key.'
+                            )}
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name='volc_secret_key'
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{t('Asset API SecretKey')}</FormLabel>
+                          <FormControl>
+                            <Input
+                              type='password'
+                              autoComplete='off'
+                              placeholder={t(
+                                'Leave blank to keep the existing value'
+                              )}
+                              {...field}
+                            />
+                          </FormControl>
+                          <FormDescription>
+                            {t(
+                              'VolcEngine SecretKey for the Asset (material library) API.'
+                            )}
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </>
+                )}
+
                 {/* Coze (type 49) */}
                 {currentType === 49 && (
                   <FormField

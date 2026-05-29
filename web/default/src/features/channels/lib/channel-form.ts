@@ -65,6 +65,8 @@ export const channelFormSchema = z.object({
   is_enterprise_account: z.boolean().optional(), // OpenRouter specific
   vertex_key_type: z.enum(['json', 'api_key']).optional(), // Vertex AI specific
   aws_key_type: z.enum(['ak_sk', 'api_key']).optional(), // AWS specific
+  volc_access_key: z.string().optional(), // VolcEngine Asset API specific
+  volc_secret_key: z.string().optional(), // VolcEngine Asset API specific
   azure_responses_version: z.string().optional(), // Azure specific
   // Field passthrough controls (stored in settings JSON)
   allow_service_tier: z.boolean().optional(), // OpenAI/Anthropic
@@ -123,6 +125,8 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   is_enterprise_account: false,
   vertex_key_type: 'json',
   aws_key_type: 'ak_sk',
+  volc_access_key: '',
+  volc_secret_key: '',
   azure_responses_version: '',
   // Field passthrough controls
   allow_service_tier: false,
@@ -322,6 +326,18 @@ function buildSettingsJSON(formData: ChannelFormValues): string {
     settingsObj.aws_key_type = formData.aws_key_type || 'ak_sk'
   } else if ('aws_key_type' in settingsObj) {
     delete settingsObj.aws_key_type
+  }
+
+  // Add VolcEngine Asset API AK/SK for VolcEngine channels (type 45).
+  // Credentials are never echoed back to the form, so only overwrite when a
+  // non-empty value is provided; an empty input keeps the previously stored value.
+  if (formData.type === 45) {
+    if (formData.volc_access_key) {
+      settingsObj.volc_access_key = formData.volc_access_key
+    }
+    if (formData.volc_secret_key) {
+      settingsObj.volc_secret_key = formData.volc_secret_key
+    }
   }
 
   // Field passthrough controls:
