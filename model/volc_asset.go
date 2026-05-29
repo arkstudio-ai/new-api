@@ -7,6 +7,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"gorm.io/gorm"
 )
 
 // VolcAssetGroup 记录火山方舟 Asset Group（素材资产组合）与 new-api 令牌的归属关系。
@@ -47,6 +48,13 @@ func (VolcAsset) TableName() string {
 	return "volc_assets"
 }
 
+type VolcAssetChannelAuth struct {
+	AccessKey    string
+	SecretKey    string
+	ProjectName  string
+	FromSettings bool
+}
+
 // ============================
 // 渠道路由：按分组选取火山渠道
 // ============================
@@ -59,21 +67,50 @@ func GetVolcAssetChannelByGroup(group string) (*Channel, error) {
 		return nil, fmt.Errorf("token group is empty")
 	}
 	var channels []*Channel
-	query := DB.Where("type = ? AND status = ?",
-		constant.ChannelTypeVolcEngine, common.ChannelStatusEnabled)
+	// 火山系渠道：方舟/豆包通用(45) 与 豆包视频(54) 都走火山 OpenAPI（同一 ark 端点、
+	// 同一套 AK/SK），Asset 素材库 AK/SK 可挂在其中任一渠道上。
+	query := DB.Where("type IN ? AND status = ?",
+		[]int{constant.ChannelTypeVolcEngine, constant.ChannelTypeDoubaoVideo},
+		common.ChannelStatusEnabled)
 	query = ApplyChannelGroupFilter(query, group)
 	if err := query.Order("priority DESC").Find(&channels).Error; err != nil {
 		return nil, err
 	}
 	for _, ch := range channels {
-		settings := ch.GetOtherSettings()
-		if strings.TrimSpace(settings.VolcAccessKey) == "" ||
-			strings.TrimSpace(settings.VolcSecretKey) == "" {
+		auth := GetVolcAssetChannelAuth(ch)
+		if auth.AccessKey == "" || auth.SecretKey == "" {
 			continue
 		}
 		return ch, nil
 	}
 	return nil, fmt.Errorf("no enabled volcengine channel with asset AK/SK configured for group: %s", group)
+}
+
+func GetVolcAssetChannelAuth(channel *Channel) VolcAssetChannelAuth {
+	if channel == nil {
+		return VolcAssetChannelAuth{}
+	}
+	settings := channel.GetOtherSettings()
+	auth := VolcAssetChannelAuth{
+		AccessKey:   strings.TrimSpace(settings.VolcAccessKey),
+		SecretKey:   strings.TrimSpace(settings.VolcSecretKey),
+		ProjectName: strings.TrimSpace(settings.VolcProjectName),
+	}
+	if auth.AccessKey != "" && auth.SecretKey != "" {
+		auth.FromSettings = true
+		return auth
+	}
+	// Backward compatibility for older channels that stored Asset AK/SK as key=AK|SK.
+	parts := strings.Split(channel.Key, "|")
+	if len(parts) >= 2 {
+		if auth.AccessKey == "" {
+			auth.AccessKey = strings.TrimSpace(parts[0])
+		}
+		if auth.SecretKey == "" {
+			auth.SecretKey = strings.TrimSpace(parts[1])
+		}
+	}
+	return auth
 }
 
 // ============================
@@ -126,6 +163,17 @@ func UpdateVolcAssetGroupMeta(tokenId int, volcGroupId, name string) error {
 	return DB.Model(&VolcAssetGroup{}).
 		Where("token_id = ? AND volc_group_id = ?", tokenId, volcGroupId).
 		Updates(updates).Error
+}
+
+func DeleteVolcAssetGroupByToken(tokenId int, volcGroupId string) error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("token_id = ? AND volc_group_id = ?", tokenId, volcGroupId).
+			Delete(&VolcAsset{}).Error; err != nil {
+			return err
+		}
+		return tx.Where("token_id = ? AND volc_group_id = ?", tokenId, volcGroupId).
+			Delete(&VolcAssetGroup{}).Error
+	})
 }
 
 // ============================
@@ -187,4 +235,9 @@ func UpdateVolcAssetMeta(tokenId int, volcAssetId string, name, status string) e
 	return DB.Model(&VolcAsset{}).
 		Where("token_id = ? AND volc_asset_id = ?", tokenId, volcAssetId).
 		Updates(updates).Error
+}
+
+func DeleteVolcAssetByToken(tokenId int, volcAssetId string) error {
+	return DB.Where("token_id = ? AND volc_asset_id = ?", tokenId, volcAssetId).
+		Delete(&VolcAsset{}).Error
 }

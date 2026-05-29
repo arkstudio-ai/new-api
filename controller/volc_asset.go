@@ -2,6 +2,7 @@ package controller
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -52,14 +53,50 @@ func volcAssetCall(c *gin.Context, action string, body []byte) (*model.Channel, 
 		volcAssetError(c, http.StatusBadRequest, err.Error())
 		return nil, nil, false
 	}
-	settings := channel.GetOtherSettings()
+	auth := model.GetVolcAssetChannelAuth(channel)
 	proxy := channel.GetSetting().Proxy
-	result, err := volcasset.Call(c.Request.Context(), settings.VolcAccessKey, settings.VolcSecretKey, action, body, proxy)
+	// 请求体未带 ProjectName 时，注入渠道配置的默认项目名（带了则用调用方的）。
+	body = injectDefaultProjectName(body, auth.ProjectName)
+	result, err := volcasset.Call(c.Request.Context(), auth.AccessKey, auth.SecretKey, action, body, proxy)
 	if err != nil {
 		volcAssetError(c, http.StatusInternalServerError, err.Error())
 		return nil, nil, false
 	}
 	return channel, result, true
+}
+
+// injectDefaultProjectName 在请求体缺少（或为空）ProjectName 时写入渠道默认值 def。
+// 解析失败或 def 为空时原样返回，保证不破坏既有请求。
+func injectDefaultProjectName(body []byte, def string) []byte {
+	if strings.TrimSpace(def) == "" {
+		return body
+	}
+	var m map[string]any
+	if len(body) == 0 {
+		m = map[string]any{}
+	} else if err := common.Unmarshal(body, &m); err != nil || m == nil {
+		return body
+	}
+	if pn, ok := m["ProjectName"].(string); ok && strings.TrimSpace(pn) != "" {
+		return body // 调用方已显式指定，尊重之
+	}
+	m["ProjectName"] = def
+	out, err := common.Marshal(m)
+	if err != nil {
+		return body
+	}
+	return out
+}
+
+// effectiveProjectName 返回用于本地归属记录的项目名：优先请求体值，否则取渠道默认。
+func effectiveProjectName(reqProjectName string, channel *model.Channel) string {
+	if strings.TrimSpace(reqProjectName) != "" {
+		return reqProjectName
+	}
+	if channel != nil {
+		return model.GetVolcAssetChannelAuth(channel).ProjectName
+	}
+	return reqProjectName
 }
 
 func volcAssetIsSuccess(result *volcasset.CallResult) bool {
@@ -102,7 +139,7 @@ func VolcCreateAssetGroup(c *gin.Context) {
 		if res.Result.Id != "" {
 			req := parseVolcRequestBody(body)
 			_ = model.RecordVolcAssetGroup(c.GetInt("token_id"), c.GetInt("id"), channel.Id,
-				res.Result.Id, req.Name, req.ProjectName)
+				res.Result.Id, req.Name, effectiveProjectName(req.ProjectName, channel))
 		}
 	}
 	writeVolcRaw(c, result)
@@ -173,6 +210,31 @@ func VolcUpdateAssetGroup(c *gin.Context) {
 	writeVolcRaw(c, result)
 }
 
+// VolcDeleteAssetGroup POST /open/DeleteAssetGroup
+func VolcDeleteAssetGroup(c *gin.Context) {
+	body, err := c.GetRawData()
+	if err != nil {
+		volcAssetError(c, http.StatusBadRequest, "failed to read request body")
+		return
+	}
+	req := parseVolcRequestBody(body)
+	if !volcAssetEnsureGroupOwned(c, req.GroupId, req.Id) {
+		return
+	}
+	_, result, ok := volcAssetCall(c, "DeleteAssetGroup", body)
+	if !ok {
+		return
+	}
+	if volcAssetIsSuccess(result) {
+		groupId := req.Id
+		if groupId == "" {
+			groupId = req.GroupId
+		}
+		_ = model.DeleteVolcAssetGroupByToken(c.GetInt("token_id"), groupId)
+	}
+	writeVolcRaw(c, result)
+}
+
 // ============================
 // Asset
 // ============================
@@ -207,7 +269,7 @@ func VolcCreateAsset(c *gin.Context) {
 		res := parseVolcResult(result.Body)
 		if res.Result.Id != "" {
 			_ = model.RecordVolcAsset(c.GetInt("token_id"), c.GetInt("id"), channel.Id,
-				res.Result.Id, req.GroupId, req.Name, "Image", req.ProjectName)
+				res.Result.Id, req.GroupId, req.Name, "Image", effectiveProjectName(req.ProjectName, channel))
 		}
 	}
 	writeVolcRaw(c, result)
@@ -294,6 +356,37 @@ func VolcUpdateAsset(c *gin.Context) {
 	}
 	if volcAssetIsSuccess(result) {
 		_ = model.UpdateVolcAssetMeta(c.GetInt("token_id"), req.Id, req.Name, "")
+	}
+	writeVolcRaw(c, result)
+}
+
+// VolcDeleteAsset POST /open/DeleteAsset
+func VolcDeleteAsset(c *gin.Context) {
+	body, err := c.GetRawData()
+	if err != nil {
+		volcAssetError(c, http.StatusBadRequest, "failed to read request body")
+		return
+	}
+	req := parseVolcRequestBody(body)
+	if req.Id == "" {
+		volcAssetError(c, http.StatusBadRequest, "Id is required")
+		return
+	}
+	owned, ownErr := model.IsVolcAssetOwnedByToken(c.GetInt("token_id"), req.Id)
+	if ownErr != nil {
+		volcAssetError(c, http.StatusInternalServerError, ownErr.Error())
+		return
+	}
+	if !owned {
+		volcAssetError(c, http.StatusForbidden, "asset does not belong to current token")
+		return
+	}
+	_, result, ok := volcAssetCall(c, "DeleteAsset", body)
+	if !ok {
+		return
+	}
+	if volcAssetIsSuccess(result) {
+		_ = model.DeleteVolcAssetByToken(c.GetInt("token_id"), req.Id)
 	}
 	writeVolcRaw(c, result)
 }

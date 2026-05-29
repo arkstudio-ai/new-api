@@ -200,6 +200,11 @@ const EditChannelModal = (props) => {
     vertex_key_type: 'json',
     // 仅 AWS: 密钥格式和区域（存入 settings.aws_key_type 和 settings.aws_region）
     aws_key_type: 'ak_sk',
+    // 仅 VolcEngine(45)/豆包视频(54): Asset 素材库 API 的 AK/SK 与默认项目名
+    // （存入 settings.volc_access_key / volc_secret_key / volc_project_name）
+    volc_access_key: '',
+    volc_secret_key: '',
+    volc_project_name: '',
     // 企业账户设置
     is_enterprise_account: false,
     // 字段透传控制默认值
@@ -897,6 +902,8 @@ const EditChannelModal = (props) => {
           data.vertex_key_type = parsedSettings.vertex_key_type || 'json';
           // 读取 AWS 密钥格式和区域
           data.aws_key_type = parsedSettings.aws_key_type || 'ak_sk';
+          // 读取火山 Asset 默认项目名（非密钥，可回显；AK/SK 不回显）
+          data.volc_project_name = parsedSettings.volc_project_name || '';
           // 读取企业账户设置
           data.is_enterprise_account =
             parsedSettings.openrouter_enterprise === true;
@@ -1778,6 +1785,19 @@ const EditChannelModal = (props) => {
       settings.aws_key_type = localInputs.aws_key_type || 'ak_sk';
     }
 
+    // type 45(火山方舟/豆包通用) 或 54(豆包视频): Asset 素材库 AK/SK 与默认项目名。
+    // AK/SK 为凭证，不回显，仅在用户填写了非空值时才覆盖（留空保持原值）；
+    // ProjectName 非密钥，回显且按填写值写入（留空表示清除）。
+    if (localInputs.type === 45 || localInputs.type === 54) {
+      if (localInputs.volc_access_key) {
+        settings.volc_access_key = localInputs.volc_access_key;
+      }
+      if (localInputs.volc_secret_key) {
+        settings.volc_secret_key = localInputs.volc_secret_key;
+      }
+      settings.volc_project_name = (localInputs.volc_project_name || '').trim();
+    }
+
     // type === 41 (Vertex): 始终保存 vertex_key_type 到 settings，避免编辑时被重置
     if (localInputs.type === 41) {
       settings.vertex_key_type = localInputs.vertex_key_type || 'json';
@@ -1840,6 +1860,10 @@ const EditChannelModal = (props) => {
     delete localInputs.vertex_key_type;
     // 顶层的 aws_key_type 不应发送给后端
     delete localInputs.aws_key_type;
+    // 顶层的 volc AK/SK / 项目名不应作为顶层字段发送（已并入 settings）
+    delete localInputs.volc_access_key;
+    delete localInputs.volc_secret_key;
+    delete localInputs.volc_project_name;
     // 清理字段透传控制的临时字段
     delete localInputs.allow_service_tier;
     delete localInputs.disable_store;
@@ -3445,6 +3469,42 @@ const EditChannelModal = (props) => {
                             disabled={isIonetLocked}
                           />
                         </div>
+                      )}
+
+                      {/* VolcEngine(45)/豆包视频(54) - Asset 素材库 AK/SK 与默认项目名（可选） */}
+                      {(inputs.type === 45 || inputs.type === 54) && (
+                        <>
+                          <Form.Input
+                            field='volc_access_key'
+                            label={t('Asset 素材库 AccessKey')}
+                            placeholder={t('留空则保持原有值')}
+                            mode='password'
+                            autoComplete='new-password'
+                            extraText={t(
+                              '火山引擎 Asset（素材库）API 的 AccessKey，用于 AK/SK 签名，与渠道 API Key 区分',
+                            )}
+                          />
+                          <Form.Input
+                            field='volc_secret_key'
+                            label={t('Asset 素材库 SecretKey')}
+                            placeholder={t('留空则保持原有值')}
+                            mode='password'
+                            autoComplete='new-password'
+                            extraText={t('火山引擎 Asset（素材库）API 的 SecretKey')}
+                          />
+                          <Form.Input
+                            field='volc_project_name'
+                            label={t('Asset 素材库默认项目名')}
+                            placeholder={t('火山项目名(ProjectName)，可留空')}
+                            showClear
+                            onChange={(value) =>
+                              handleInputChange('volc_project_name', value)
+                            }
+                            extraText={t(
+                              '请求体未带 ProjectName 时，网关自动注入此项目名；调用方显式传了则用调用方的',
+                            )}
+                          />
+                        </>
                       )}
                     </div>
                   )}
