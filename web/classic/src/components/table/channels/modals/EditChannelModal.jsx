@@ -200,6 +200,9 @@ const EditChannelModal = (props) => {
     vertex_key_type: 'json',
     // 仅 AWS: 密钥格式和区域（存入 settings.aws_key_type 和 settings.aws_region）
     aws_key_type: 'ak_sk',
+    // 仅 VolcEngine: Asset 素材库 API 的 AK/SK（存入 settings.volc_access_key/volc_secret_key）
+    volc_access_key: '',
+    volc_secret_key: '',
     // 企业账户设置
     is_enterprise_account: false,
     // 字段透传控制默认值
@@ -1778,6 +1781,17 @@ const EditChannelModal = (props) => {
       settings.aws_key_type = localInputs.aws_key_type || 'ak_sk';
     }
 
+    // type === 45 (VolcEngine): Asset 素材库 AK/SK。凭证不回显，仅在用户填写了
+    // 非空值时才覆盖，留空表示保持原有值。
+    if (localInputs.type === 45) {
+      if (localInputs.volc_access_key) {
+        settings.volc_access_key = localInputs.volc_access_key;
+      }
+      if (localInputs.volc_secret_key) {
+        settings.volc_secret_key = localInputs.volc_secret_key;
+      }
+    }
+
     // type === 41 (Vertex): 始终保存 vertex_key_type 到 settings，避免编辑时被重置
     if (localInputs.type === 41) {
       settings.vertex_key_type = localInputs.vertex_key_type || 'json';
@@ -1840,6 +1854,9 @@ const EditChannelModal = (props) => {
     delete localInputs.vertex_key_type;
     // 顶层的 aws_key_type 不应发送给后端
     delete localInputs.aws_key_type;
+    // 顶层的 volc AK/SK 不应作为顶层字段发送（已并入 settings）
+    delete localInputs.volc_access_key;
+    delete localInputs.volc_secret_key;
     // 清理字段透传控制的临时字段
     delete localInputs.allow_service_tier;
     delete localInputs.disable_store;
@@ -3445,6 +3462,30 @@ const EditChannelModal = (props) => {
                             disabled={isIonetLocked}
                           />
                         </div>
+                      )}
+
+                      {/* VolcEngine (type 45) - Asset 素材库 AK/SK（可选） */}
+                      {inputs.type === 45 && (
+                        <>
+                          <Form.Input
+                            field='volc_access_key'
+                            label={t('Asset 素材库 AccessKey')}
+                            placeholder={t('留空则保持原有值')}
+                            mode='password'
+                            autoComplete='new-password'
+                            extraText={t(
+                              '火山引擎 Asset（素材库）API 的 AccessKey，用于 AK/SK 签名，与渠道 API Key 区分',
+                            )}
+                          />
+                          <Form.Input
+                            field='volc_secret_key'
+                            label={t('Asset 素材库 SecretKey')}
+                            placeholder={t('留空则保持原有值')}
+                            mode='password'
+                            autoComplete='new-password'
+                            extraText={t('火山引擎 Asset（素材库）API 的 SecretKey')}
+                          />
+                        </>
                       )}
                     </div>
                   )}
