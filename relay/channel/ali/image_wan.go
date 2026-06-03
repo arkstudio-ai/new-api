@@ -16,7 +16,6 @@ func oaiFormEdit2WanxImageEdit(c *gin.Context, info *relaycommon.RelayInfo, requ
 	var err error
 	var imageRequest AliImageRequest
 	imageRequest.Model = request.Model
-	imageRequest.ResponseFormat = request.ResponseFormat
 	wanInput := WanImageInput{
 		Prompt: request.Prompt,
 	}

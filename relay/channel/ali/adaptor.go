@@ -178,6 +178,7 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 }
 
 func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.ImageRequest) (any, error) {
+	stashImageResponseFormat(c, request)
 	if info.RelayMode == constant.RelayModeImagesGenerations {
 		if isSyncImageModel(info.OriginModelName) {
 			a.IsSyncImageModel = true

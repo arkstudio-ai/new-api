@@ -21,10 +21,17 @@ import (
 	"github.com/samber/lo"
 )
 
+// stashImageResponseFormat keeps OpenAI response_format for downstream
+// response shaping only. DashScope image APIs reject it as an unknown field.
+func stashImageResponseFormat(c *gin.Context, request dto.ImageRequest) {
+	if request.ResponseFormat != "" {
+		c.Set("response_format", request.ResponseFormat)
+	}
+}
+
 func oaiImage2AliImageRequest(info *relaycommon.RelayInfo, request dto.ImageRequest, isSync bool) (*AliImageRequest, error) {
 	var imageRequest AliImageRequest
 	imageRequest.Model = request.Model
-	imageRequest.ResponseFormat = request.ResponseFormat
 	if request.Extra != nil {
 		if val, ok := request.Extra["parameters"]; ok {
 			err := common.Unmarshal(val, &imageRequest.Parameters)
@@ -155,7 +162,6 @@ func getImageBase64sFromForm(c *gin.Context, fieldName string) ([]string, error)
 func oaiFormEdit2AliImageEdit(c *gin.Context, info *relaycommon.RelayInfo, request dto.ImageRequest) (*AliImageRequest, error) {
 	var imageRequest AliImageRequest
 	imageRequest.Model = request.Model
-	imageRequest.ResponseFormat = request.ResponseFormat
 
 	imageBase64s, err := getImageBase64sFromForm(c, "image")
 	if err != nil {
