@@ -33,6 +33,14 @@ type AliVideoRequest struct {
 	Parameters *AliVideoParameters `json:"parameters,omitempty"`
 }
 
+// AliMediaItem 万相2.6+ 统一多模态输入项（input.media[]）。
+// type: reference_image / reference_video / first_frame / last_frame / video ...
+type AliMediaItem struct {
+	Type           string `json:"type"`
+	URL            string `json:"url,omitempty"`
+	ReferenceVoice string `json:"reference_voice,omitempty"`
+}
+
 // AliVideoInput 视频输入参数
 type AliVideoInput struct {
 	Prompt         string `json:"prompt,omitempty"`          // 文本提示词
@@ -42,11 +50,15 @@ type AliVideoInput struct {
 	AudioURL       string `json:"audio_url,omitempty"`       // 音频URL（wan2.5支持）
 	NegativePrompt string `json:"negative_prompt,omitempty"` // 反向提示词
 	Template       string `json:"template,omitempty"`        // 视频特效模板
+	// Media 万相2.6/2.7 统一多模态格式（参考生视频/视频编辑）。该格式下 media 必填，
+	// 旧版扁平字段（img_url/first_frame_url…）被 media[] 取代。
+	Media []AliMediaItem `json:"media,omitempty"`
 }
 
 // AliVideoParameters 视频参数
 type AliVideoParameters struct {
 	Resolution   string `json:"resolution,omitempty"`    // 分辨率: 480P/720P/1080P（图生视频、首尾帧生视频）
+	Ratio        string `json:"ratio,omitempty"`         // 画面比例: 16:9/9:16/1:1...（wan2.6+ 参考生视频）
 	Size         string `json:"size,omitempty"`          // 尺寸: 如 "832*480"（文生视频）
 	Duration     int    `json:"duration,omitempty"`      // 时长: 3-10秒
 	PromptExtend bool   `json:"prompt_extend,omitempty"` // 是否开启prompt智能改写
@@ -269,43 +281,51 @@ func (a *TaskAdaptor) convertToAliRequest(info *relaycommon.RelayInfo, req relay
 		},
 	}
 
-	// 处理分辨率映射
-	if req.Size != "" {
-		// text to video size must be contained *
-		if strings.Contains(req.Model, "t2v") && !strings.Contains(req.Size, "*") {
-			return nil, fmt.Errorf("invalid size: %s, example: %s", req.Size, "1920*1080")
-		}
-		if strings.Contains(req.Size, "*") {
-			aliReq.Parameters.Size = req.Size
-		} else {
-			resolution := strings.ToUpper(req.Size)
-			// 支持 480p, 720p, 1080p 或 480P, 720P, 1080P
-			if !strings.HasSuffix(resolution, "P") {
-				resolution = resolution + "P"
+	// 商业版网关会把 DashScope 原生 input/parameters 嵌套放进 metadata 透传，
+	// 用于支持万相2.6/2.7 的 input.media[] 参考生视频/视频编辑格式。检测到 native
+	// parameters 时跳过下面的 size/resolution 默认推断——完全由 native 参数决定，
+	// 避免给 media[] 请求残留一个冲突的 size/resolution。
+	_, hasNativeParams := req.Metadata["parameters"]
+
+	// 处理分辨率映射（native parameters 路径完全由透传参数决定，跳过默认推断）
+	if !hasNativeParams {
+		if req.Size != "" {
+			// text to video size must be contained *
+			if strings.Contains(req.Model, "t2v") && !strings.Contains(req.Size, "*") {
+				return nil, fmt.Errorf("invalid size: %s, example: %s", req.Size, "1920*1080")
 			}
-			aliReq.Parameters.Resolution = resolution
-		}
-	} else {
-		// 根据模型设置默认分辨率
-		if strings.Contains(req.Model, "t2v") { // image to video
-			if strings.HasPrefix(req.Model, "wan2.5") {
-				aliReq.Parameters.Size = "1920*1080"
-			} else if strings.HasPrefix(req.Model, "wan2.2") {
-				aliReq.Parameters.Size = "1920*1080"
+			if strings.Contains(req.Size, "*") {
+				aliReq.Parameters.Size = req.Size
 			} else {
-				aliReq.Parameters.Size = "1280*720"
+				resolution := strings.ToUpper(req.Size)
+				// 支持 480p, 720p, 1080p 或 480P, 720P, 1080P
+				if !strings.HasSuffix(resolution, "P") {
+					resolution = resolution + "P"
+				}
+				aliReq.Parameters.Resolution = resolution
 			}
 		} else {
-			if strings.HasPrefix(req.Model, "wan2.6") {
-				aliReq.Parameters.Resolution = "1080P"
-			} else if strings.HasPrefix(req.Model, "wan2.5") {
-				aliReq.Parameters.Resolution = "1080P"
-			} else if strings.HasPrefix(req.Model, "wan2.2-i2v-flash") {
-				aliReq.Parameters.Resolution = "720P"
-			} else if strings.HasPrefix(req.Model, "wan2.2-i2v-plus") {
-				aliReq.Parameters.Resolution = "1080P"
+			// 根据模型设置默认分辨率
+			if strings.Contains(req.Model, "t2v") { // image to video
+				if strings.HasPrefix(req.Model, "wan2.5") {
+					aliReq.Parameters.Size = "1920*1080"
+				} else if strings.HasPrefix(req.Model, "wan2.2") {
+					aliReq.Parameters.Size = "1920*1080"
+				} else {
+					aliReq.Parameters.Size = "1280*720"
+				}
 			} else {
-				aliReq.Parameters.Resolution = "720P"
+				if strings.HasPrefix(req.Model, "wan2.6") {
+					aliReq.Parameters.Resolution = "1080P"
+				} else if strings.HasPrefix(req.Model, "wan2.5") {
+					aliReq.Parameters.Resolution = "1080P"
+				} else if strings.HasPrefix(req.Model, "wan2.2-i2v-flash") {
+					aliReq.Parameters.Resolution = "720P"
+				} else if strings.HasPrefix(req.Model, "wan2.2-i2v-plus") {
+					aliReq.Parameters.Resolution = "1080P"
+				} else {
+					aliReq.Parameters.Resolution = "720P"
+				}
 			}
 		}
 	}
