@@ -73,7 +73,10 @@ type AliVideoResponse struct {
 	RequestID string         `json:"request_id"`
 	Code      string         `json:"code,omitempty"`
 	Message   string         `json:"message,omitempty"`
-	Usage     *AliUsage      `json:"usage,omitempty"`
+	// 注意:故意不解析 usage。happyhorse 等模型完成响应的 usage 字段类型/结构
+	// 与强类型不一致(见过 usage.duration 为 number),且本适配器从不读取 usage——
+	// 一旦强解析失败会让整个响应反序列化报错,导致后台轮询无法把任务更新成
+	// SUCCESS、永远卡在 IN_PROGRESS。忽略它即可,让 Output 状态正常解析。
 }
 
 // AliVideoOutput 输出信息
@@ -88,13 +91,6 @@ type AliVideoOutput struct {
 	VideoURL      string `json:"video_url,omitempty"`
 	Code          string `json:"code,omitempty"`
 	Message       string `json:"message,omitempty"`
-}
-
-// AliUsage 使用统计
-type AliUsage struct {
-	Duration   dto.IntValue `json:"duration,omitempty"`
-	VideoCount dto.IntValue `json:"video_count,omitempty"`
-	SR         dto.IntValue `json:"SR,omitempty"`
 }
 
 type AliMetadata struct {
