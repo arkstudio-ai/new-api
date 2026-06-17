@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/QuantumNous/new-api/common"
 	channelconstant "github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/relay/channel"
@@ -47,6 +48,22 @@ func (a *Adaptor) ConvertClaudeRequest(c *gin.Context, info *relaycommon.RelayIn
 }
 
 func (a *Adaptor) ConvertAudioRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.AudioRequest) (io.Reader, error) {
+	if info.RelayMode == constant.RelayModeAudioTranscription {
+		asrRequest, resourceID, err := buildVolcengineASRRequest(c, request)
+		if err != nil {
+			return nil, err
+		}
+		requestID := generateRequestID()
+		c.Set(contextKeyASRRequestID, requestID)
+		c.Set(contextKeyASRResourceID, resourceID)
+		c.Set(contextKeyASRResponseFormat, request.ResponseFormat)
+		jsonData, err := common.Marshal(asrRequest)
+		if err != nil {
+			return nil, fmt.Errorf("error marshalling volcengine ASR request: %w", err)
+		}
+		return bytes.NewReader(jsonData), nil
+	}
+
 	if info.RelayMode != constant.RelayModeAudioSpeech {
 		return nil, errors.New("unsupported audio relay mode")
 	}
@@ -278,6 +295,8 @@ func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 				return "wss://openspeech.bytedance.com/api/v1/tts/ws_binary", nil
 			}
 			return fmt.Sprintf("%s/v1/audio/speech", baseUrl), nil
+		case constant.RelayModeAudioTranscription:
+			return volcengineASRSubmitURL, nil
 		default:
 		}
 	}
@@ -294,6 +313,10 @@ func (a *Adaptor) SetupRequestHeader(c *gin.Context, req *http.Header, info *rel
 		}
 		req.Set("Content-Type", "application/json")
 		return nil
+	} else if info.RelayMode == constant.RelayModeAudioTranscription {
+		requestID := c.GetString(contextKeyASRRequestID)
+		resourceID := c.GetString(contextKeyASRResourceID)
+		return setupVolcengineASRHeader(req, info.ApiKey, requestID, resourceID, true)
 	} else if info.RelayMode == constant.RelayModeImagesEdits {
 		req.Set("Content-Type", gin.MIMEJSON)
 	}
@@ -386,6 +409,9 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycom
 			return handleTTSWebSocketResponse(c, requestURL, volcRequest, info, encoding)
 		}
 		return handleTTSResponse(c, resp, info, encoding)
+	}
+	if info.RelayMode == constant.RelayModeAudioTranscription {
+		return handleASRResponse(c, resp, info)
 	}
 
 	adaptor := openai.Adaptor{}

@@ -11,6 +11,8 @@ import (
 
 type AudioRequest struct {
 	Model          string          `json:"model"`
+	AudioURL       string          `json:"audio_url,omitempty"`
+	URL            string          `json:"url,omitempty"`
 	Input          string          `json:"input"`
 	Voice          string          `json:"voice"`
 	Instructions   string          `json:"instructions,omitempty"`
