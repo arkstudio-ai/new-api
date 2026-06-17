@@ -190,6 +190,18 @@ func EstimateRequestToken(c *gin.Context, meta *types.TokenCountMeta, info *rela
 		return 0, nil
 	}
 	if info.RelayMode == constant2.RelayModeAudioTranscription || info.RelayMode == constant2.RelayModeAudioTranslation {
+		if strings.HasPrefix(c.Request.Header.Get("Content-Type"), "application/json") {
+			var audioRequest dto.AudioRequest
+			if err := common.UnmarshalBodyReusable(c, &audioRequest); err != nil {
+				return 0, fmt.Errorf("error parsing audio json request: %v", err)
+			}
+			if audioRequest.AudioURL != "" || audioRequest.URL != "" {
+				// Remote audio URLs cannot be duration-probed cheaply here.
+				// Pre-consume one minute worth of audio tokens; settlement can
+				// still use upstream usage if the provider returns it.
+				return 1000, nil
+			}
+		}
 		multiForm, err := common.ParseMultipartFormReusable(c)
 		if err != nil {
 			return 0, fmt.Errorf("error parsing multipart form: %v", err)
