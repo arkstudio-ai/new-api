@@ -282,7 +282,7 @@ func queryVolcengineASRResult(c *gin.Context, info *relaycommon.RelayInfo, reque
 			return nil, false, types.NewErrorWithStatusCode(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
 		}
 	}
-	if result.Result != nil {
+	if result.Result != nil && (result.Result.Text != "" || len(result.Result.Utterance) > 0) {
 		return &result, true, nil
 	}
 	if statusCode == volcengineASRSilenceCode {
