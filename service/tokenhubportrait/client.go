@@ -24,7 +24,10 @@ import (
 	"github.com/QuantumNous/new-api/service"
 )
 
-const DefaultProject = "深圳赞卫数字科技有限公司"
+// TokenHub forwards this to Ark's resource project. The supplied integration
+// document contradicts its own default-project example; live AIGC creation
+// rejects the company display name with InvalidParameter.ProjectName.
+const DefaultProject = "default"
 
 // Error contains reviewed public diagnostics, not arbitrary upstream messages.
 type Error struct {

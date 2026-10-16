@@ -9,6 +9,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -74,13 +75,17 @@ func (u *portraitUpstream) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.URL.Path == "/v1/portrait/asset-group":
 		u.groupCreates++
 		id := fmt.Sprintf("group-virtual-%d", u.groupCreates)
-		u.groups[id] = map[string]any{"Id": id, "GroupType": body["GroupType"], "Name": body["Name"], "Status": "active"}
+		u.groups[id] = map[string]any{"Id": id, "GroupType": body["GroupType"], "Name": body["Name"], "ProjectName": body["ProjectName"]}
 		if u.loseGroupCreate {
 			u.loseGroupCreate = false
 			panic(http.ErrAbortHandler)
 		}
 		result = map[string]any{"Id": id, "GroupType": "AIGC"}
 	case r.URL.Path == "/v1/portrait/asset" && r.Method == http.MethodPost:
+		if utf8.RuneCountInString(String(body, "Name")) > 64 {
+			http.Error(w, "Name exceeds 64 characters", 400)
+			return
+		}
 		u.uploads++
 		if u.rejectCreate {
 			w.Header().Set("Content-Type", "application/json")
@@ -97,6 +102,11 @@ func (u *portraitUpstream) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		result = map[string]any{"Id": id}
 	case r.URL.Path == "/v1/portrait/asset/list":
+		filter, _ := body["Filter"].(map[string]any)
+		if String(filter, "GroupType") != "AIGC" {
+			http.Error(w, "Filter.GroupType required", 400)
+			return
+		}
 		items := []any{}
 		for _, asset := range u.assets {
 			items = append(items, asset)
@@ -236,6 +246,32 @@ func TestPortraitRejectsNonVirtualGroupsBeforeUpstreamCalls(t *testing.T) {
 	_, err = c.EnsureAsset(context.Background(), "real-group", "https://files.example/video", "Video", 0)
 	require.Equal(t, "portrait_virtual_only", PublicError(err).Code)
 	require.Zero(t, up.requests)
+}
+
+func TestPortraitGroupOptionalStatusAndProjectIsolation(t *testing.T) {
+	for _, scenario := range []string{"no-status", "explicit-inactive", "wrong-project"} {
+		t.Run(scenario, func(t *testing.T) {
+			c, _, up := setup(t)
+			group := virtualGroup(t, c)
+			up.mu.Lock()
+			switch scenario {
+			case "explicit-inactive":
+				up.groups[group]["Status"] = "disabled"
+			case "wrong-project":
+				up.groups[group]["ProjectName"] = "foreign-project"
+			}
+			up.mu.Unlock()
+			_, err := c.Group(context.Background(), group)
+			switch scenario {
+			case "no-status":
+				require.NoError(t, err)
+			case "explicit-inactive":
+				require.Equal(t, "portrait_group_not_active", PublicError(err).Code)
+			case "wrong-project":
+				require.Equal(t, "portrait_group_identity_mismatch", PublicError(err).Code)
+			}
+		})
+	}
 }
 
 func TestPortraitConcurrentUploadCreatesOnlyOneAsset(t *testing.T) {

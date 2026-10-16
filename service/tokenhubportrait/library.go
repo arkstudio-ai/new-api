@@ -61,8 +61,18 @@ func (c *Client) Group(ctx context.Context, id string) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	if String(result, "Id") != id || String(result, "GroupType") != row.GroupType || !strings.EqualFold(String(result, "Status"), "active") {
+	if String(result, "Id") != id || String(result, "GroupType") != row.GroupType {
 		return nil, Fail("portrait_group_not_active", "素材资产组已失效或尚未就绪。", 409)
+	}
+	if project, exists := result["ProjectName"]; exists && project != c.Project {
+		return nil, Fail("portrait_group_identity_mismatch", "素材组所属项目不一致，暂停生成。", 502)
+	}
+	// Real AIGC groups do not have Status. Only assets must reach Active;
+	// retain the check for gateways that explicitly return a group status.
+	if status, exists := result["Status"]; exists {
+		if text, ok := status.(string); !ok || !strings.EqualFold(text, "active") {
+			return nil, Fail("portrait_group_not_active", "素材资产组已失效或尚未就绪。", 409)
+		}
 	}
 	return result, nil
 }
@@ -110,6 +120,9 @@ func (c *Client) refreshAsset(ctx context.Context, row *model.TokenHubPortraitAs
 	}
 	if String(result, "Id") != row.AssetId || String(result, "GroupId") != row.GroupId || String(result, "AssetType") != row.AssetType {
 		return nil, Fail("portrait_asset_identity_mismatch", "素材库返回的素材身份或归属不一致。", 502)
+	}
+	if project, exists := result["ProjectName"]; exists && project != c.Project {
+		return nil, Fail("portrait_asset_identity_mismatch", "素材所属项目不一致，暂停生成。", 502)
 	}
 	status := String(result, "Status")
 	if status != "Active" && status != "Processing" && status != "Failed" {
@@ -167,7 +180,7 @@ func (c *Client) EnsureAsset(ctx context.Context, group, source, kind string, wa
 			return nil, err
 		}
 		key := Digest(c.Scope + "\n" + group + "\n" + kind + "\n" + digest)
-		row = model.TokenHubPortraitAsset{CacheKey: key, Scope: c.Scope, GroupId: group, AssetType: kind, Status: "Uploading", Name: "na-" + key, UpdatedAt: time.Now().Unix()}
+		row = model.TokenHubPortraitAsset{CacheKey: key, Scope: c.Scope, GroupId: group, AssetType: kind, Status: "Uploading", Name: "na-" + key[:61], UpdatedAt: time.Now().Unix()}
 		result := model.DB.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&row)
 		if result.Error != nil {
 			return nil, result.Error
@@ -244,7 +257,7 @@ func (c *Client) EnsureAsset(ctx context.Context, group, source, kind string, wa
 func (c *Client) reconcile(ctx context.Context, row *model.TokenHubPortraitAsset) error {
 	// Never list the upstream account globally: only this owned group is queried.
 	for page := 1; page <= 20; page++ {
-		result, err := c.Call(ctx, http.MethodPost, "asset/list", map[string]any{"Filter": map[string]any{"GroupIds": []string{row.GroupId}}, "PageNumber": page, "PageSize": 100})
+		result, err := c.Call(ctx, http.MethodPost, "asset/list", map[string]any{"Filter": map[string]any{"GroupIds": []string{row.GroupId}, "GroupType": "AIGC"}, "PageNumber": page, "PageSize": 100})
 		if err != nil {
 			return err
 		}

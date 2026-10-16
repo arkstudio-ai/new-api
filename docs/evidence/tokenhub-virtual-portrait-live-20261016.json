@@ -1,0 +1,48 @@
+{
+  "checked_at": "2026-10-16T18:30:29+08:00",
+  "verification_route": "Direct TokenHub HTTP calls using existing OpenBox TokenHub credential; new-api not deployed",
+  "source": {
+    "source_id": "asset-20260224225526-g6kpx",
+    "name": "中国 28岁 女性 网红/主播",
+    "sha256": "0a7ee6e4ab4b3aaf32afe0c789841b0f0ec1a179198384c3f4276cd8649b173a",
+    "bytes": 667137,
+    "full_archive_downloaded": false
+  },
+  "company_project_create": {
+    "project": "深圳赞卫数字科技有限公司",
+    "http_status": 400,
+    "error_code": "InvalidParameter.ProjectName"
+  },
+  "aigc_group": {
+    "project": "default",
+    "id": "group-20261016182611-qwn58",
+    "get_http_status": 200,
+    "status_field_present": false
+  },
+  "asset": {
+    "id": "asset-20261016182611-zhsq6",
+    "project": "default",
+    "status": "Active",
+    "get_http_status": 200,
+    "last_inference_time": null
+  },
+  "video_attempt": {
+    "model": "doubao-seedance-2-0-260128",
+    "duration": 4,
+    "resolution": "720p",
+    "ratio": "9:16",
+    "generate_audio": false,
+    "watermark": false,
+    "reference_uri": "asset://asset-20261016182611-zhsq6",
+    "http_status": 400,
+    "task_id": null,
+    "error_code": "InvalidParameter",
+    "error_param": "content[0].image_url.url",
+    "error_summary": "The specified asset is not found",
+    "upstream_request_id": "021792146431339d0772768801c6f53364f86e86ee82bc4ea05a1",
+    "automatic_retry_performed": false
+  },
+  "conclusion": "Asset ingestion reached Active; inference visibility failed. No successful video output. Provider account/project routing mismatch is a hypothesis requiring TokenHub confirmation.",
+  "production_changed": false,
+  "billing_verified": false
+}

@@ -15,14 +15,15 @@
 ```json
 {
   "tokenhub_portrait_enabled": true,
-  "tokenhub_portrait_project": "深圳赞卫数字科技有限公司"
+  "tokenhub_portrait_project": "default"
 }
 ```
 
 - 渠道类型：55（Sora）。Base URL：`https://tokenhub.moligroup.com`。
 - Key：TokenHub Bearer API key；仅单密钥账户，不支持多 Key 轮换。
 - models：配置实际开通的 Seedance 2.0 / Fast / 2.5 ID。
-- `tokenhub_portrait_project` 为空时采用上面的项目名。客户端 ProjectName 不能覆盖服务端配置。
+- `tokenhub_portrait_project` 为空时采用 `default`；显式配置不会自动回退到其他项目。客户端 ProjectName 不能覆盖服务端配置。素材项目必须与实际视频推理所用上游账户的项目一致，参见[火山官方项目隔离说明](https://docs.volcengine.com/docs/ark/private-virtual-avatar-library-guide-preview?lang=zh)。
+- 提供的接入文档总说明要求公司中文名，创建示例却使用 `default`。2026-10-16 实测公司中文名创建返回 `InvalidParameter.ProjectName`，`default` 可创建并入库；上线仍需 TokenHub 确认素材与推理通道属于同一上游账户和项目。
 - 其他渠道默认关闭，不使用旧火山 AK/SK 接口。
 - 首次启动通过 GORM 添加 `token_hub_portrait_groups/assets` 两张表；字段和查询兼容 SQLite/MySQL/PostgreSQL。升级不删除历史表或上游资源。
 
@@ -72,7 +73,7 @@ GroupId 可省略，自动使用默认虚拟素材组，也可传已绑定的 AI
 
 提供 asset-group 创建/列表/详情/改名/删除，asset 上传/列表/详情/删除。手动创建组使用 `POST /v1/portrait/asset-group`，请求体 `{"Name":"虚拟主播","GroupType":"AIGC"}`；名称最多 64 个字符。其他 GroupType 拒绝。列表仅返回本调用者本账户绑定的 AIGC 记录；素材列表需在 Filter.GroupIds 中指定一个组。列表为本地快照，单个 GET 查询实时上游状态。
 
-默认组及自动入库素材使用确定性 Name，以恢复未知创建结果。自动入库素材暂不开放改名。删除是显式管理操作，不在失败、超时、重试或回滚时自动执行；上游删除成功后保留本地失效记录。已删除默认组不会自动重建，需要明确选择新的 AIGC 组。
+默认组及自动入库素材使用确定性 Name，以恢复未知创建结果；素材 Name 不超过 64 个字符。AIGC 组真实响应没有 Status，按 Id、GroupType 和返回的 ProjectName 校验；若显式返回 Status，则仍检查 active。素材必须达到 Active。自动入库素材暂不开放改名。删除是显式管理操作，不在失败、超时、重试或回滚时自动执行；上游删除成功后保留本地失效记录。已删除默认组不会自动重建，需要明确选择新的 AIGC 组。
 
 TokenHub 实际 GET 接口要求 JSON 请求体包含 Id 和 ProjectName。网关替调用方补齐，下游 GET 无需请求体。DELETE 采用相同的显式 Id / ProjectName JSON；真实删除尚未联调。
 
@@ -85,7 +86,7 @@ TokenHub 实际 GET 接口要求 JSON 请求体包含 Id 和 ProjectName。网�
 - 前置失败返回 HTTP 400 和具体 portrait_* code，兼容现有视频客户端的“明确未受理”分类；素材管理 API 自身使用 400/404/409/410/422/429 等状态。
 - 前置失败不进入 new-api 视频预扣费。素材库自身是否收费遵循上游条款，不能由视频未扣费推断素材服务免费。
 - 启用渠道不自动跨渠道重试，包括生成请求结果不明的情况，避免资产账户错配或重复生成。
-- 列表各 10 QPS，组 GET 10 QPS，素材 GET 100 QPS，更新合计 10 QPS，删除合计 5 QPS。Redis 模式跨副本共享限流，未启用 Redis 时仅进程内共享；创建权益由上游控制。
+- 创建组 10 QPS，列表各 10 QPS，组 GET 10 QPS，素材 GET 100 QPS，更新合计 10 QPS，删除合计 5 QPS。Redis 模式跨副本共享限流，未启用 Redis 时仅进程内共享；创建权益由上游控制。
 
 ## TokenHub 视频状态兼容
 
@@ -101,9 +102,17 @@ TokenHub 实际 GET 接口要求 JSON 请求体包含 Id 和 ProjectName。网�
 3. 验收后将 OpenBox Seedance provider 从直连 TokenHub 改为自有 new-api，并确保上传和生成使用同一渠道身份。OpenBox 当前直连路线不会自动获得这项前置入库功能。
 4. 回滚可恢复 OpenBox 原路由；已有任务完成前保留 TokenHub 渠道及兼容设置，保留素材记录，不自动删除上游资源。
 
-已完成：本地自动 AIGC 组、上传后 Active 门控、超时复用、HTTP 仿真、并发/竞态、调用者隔离、原参数保留及生成前计费边界验证；TokenHub GET 的 JSON / Id 要求已做只读核验。
+已完成：本地自动 AIGC 组、上传后 Active 门控、超时复用、HTTP 仿真、并发/竞态、调用者隔离、原参数保留及生成前计费边界验证；TokenHub GET 的 JSON / Id 要求已做核验。
 
-尚未完成：真实虚拟素材入库与 Asset URI 出片、真实 DELETE、生产部署、OpenBox 路由切换及整包人像导入。没有发起付费生成。
+2026-10-16 真实 TokenHub 联调（直接使用现有 OpenBox 上游凭据，不是已部署的 new-api）：
+
+- 从 legomind 包提取一张虚拟人像，上传文件存储后创建 AIGC 组 `group-20261016182611-qwn58`。
+- 新素材 `asset-20261016182611-zhsq6` 已由 Processing 转为 Active，随后 GET 再次确认仍 Active，ProjectName 为 default。
+- 使用原 `doubao-seedance-2-0-260128` 模型、4 秒、720p、9:16，以该 asset URI 提交一次生成，返回 HTTP 400 / InvalidParameter，明确称素材不存在，没有返回任务 ID。
+- 说明入库成功，但推理端不能读取素材。素材 API 与视频 API 的上游账户或项目路由不一致是待 TokenHub 确认的推测，不能报告端到端出片成功。没有自动重试，也没有改用其他模型或原始图片 URL。
+- 联调同时修正了组缺少 Status、素材 Name 长度和恢复查询缺少 Filter.GroupType 的兼容问题，并识别实际的嵌套“素材不存在”生成错误。
+
+脱敏证据见 [真实联调记录](evidence/tokenhub-virtual-portrait-live-20261016.json)。尚未完成：成功出片、真实 DELETE、生产部署、OpenBox 路由切换及整包导入。已发起一次被明确拒绝的生成请求；供应商账单未核对。
 
 ## 测试
 

@@ -32,6 +32,8 @@ func (c *Client) allow(ctx context.Context, method, path string) error {
 	limit := 0
 	action := path
 	switch {
+	case method == "POST" && path == "asset-group":
+		limit = 10
 	case path == "asset/list" || path == "asset-group/list":
 		limit = 10
 	case method == "GET" && strings.HasPrefix(path, "asset-group/"):
