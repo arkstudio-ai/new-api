@@ -21,7 +21,7 @@ import (
 )
 
 func TestPortraitRefusalPrecedesVideoBillingAndDispatch(t *testing.T) {
-	for _, scenario := range []string{"authentication-required", "asset-failed"} {
+	for _, scenario := range []string{"asset-not-owned", "asset-failed"} {
 		t.Run(scenario, func(t *testing.T) {
 			gin.SetMode(gin.TestMode)
 			db, err := gorm.Open(sqlite.Open("file:"+strings.ReplaceAll(t.Name(), "/", "_")+"?mode=memory&cache=shared"), &gorm.Config{})
@@ -39,7 +39,7 @@ func TestPortraitRefusalPrecedesVideoBillingAndDispatch(t *testing.T) {
 			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				var result map[string]any
 				if strings.Contains(r.URL.Path, "asset-group/") {
-					result = map[string]any{"Id": "verified-group", "GroupType": "LivenessFace", "Status": "active"}
+					result = map[string]any{"Id": "verified-group", "GroupType": "AIGC", "Status": "active"}
 				} else if strings.Contains(r.URL.Path, "asset/") {
 					result = map[string]any{"Id": "verified-asset", "GroupId": "verified-group", "AssetType": "Video", "Status": "Failed"}
 				} else {
@@ -55,13 +55,13 @@ func TestPortraitRefusalPrecedesVideoBillingAndDispatch(t *testing.T) {
 			ch.SetOtherSettings(settings)
 			require.NoError(t, db.Create(&ch).Error)
 			metadata := map[string]any{"content": []any{map[string]any{"type": "video_url", "role": "reference_video", "video_url": map[string]any{"url": "asset://verified-asset"}}}}
-			expected := "portrait_authentication_required"
+			expected := "portrait_asset_not_found"
 			if scenario == "asset-failed" {
 				expected = "portrait_asset_failed"
 				metadata["portrait_group_id"] = "verified-group"
 				client, err := portrait.NewClient(&ch, 1, 7, "")
 				require.NoError(t, err)
-				require.NoError(t, db.Create(&model.TokenHubPortraitGroup{BindingKey: "binding", Scope: client.Scope, GroupId: "verified-group", GroupType: "LivenessFace"}).Error)
+				require.NoError(t, db.Create(&model.TokenHubPortraitGroup{BindingKey: "binding", Scope: client.Scope, GroupId: "verified-group", GroupType: "AIGC"}).Error)
 				require.NoError(t, db.Create(&model.TokenHubPortraitAsset{CacheKey: "cached", Scope: client.Scope, GroupId: "verified-group", AssetId: "verified-asset", AssetType: "Video", Status: "Active", Name: "cached"}).Error)
 			}
 			raw, err := common.Marshal(map[string]any{"model": "doubao-seedance-2-0-260128", "prompt": "tea portrait", "metadata": metadata})

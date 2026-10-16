@@ -13,9 +13,20 @@ func TestPortraitRoutesRequireBearerAuthentication(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	SetTokenHubPortraitRouter(r)
-	for _, target := range []struct{ method, path string }{{"POST", "/v1/portrait/session"}, {"POST", "/v1/portrait/asset"}, {"GET", "/v1/portrait/asset/asset-private"}, {"DELETE", "/v1/portrait/asset-group/group-private"}} {
+	for _, target := range []struct{ method, path string }{{"POST", "/v1/portrait/asset-group"}, {"POST", "/v1/portrait/asset"}, {"GET", "/v1/portrait/asset/asset-private"}, {"DELETE", "/v1/portrait/asset-group/group-private"}} {
 		rec := httptest.NewRecorder()
 		r.ServeHTTP(rec, httptest.NewRequest(target.method, target.path, nil))
 		require.Equal(t, http.StatusUnauthorized, rec.Code)
+	}
+}
+
+func TestPortraitLivenessRoutesAreNotRegistered(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	SetTokenHubPortraitRouter(r)
+	for _, path := range []string{"/v1/portrait/session", "/v1/portrait/validate-result"} {
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, path, nil))
+		require.Equal(t, http.StatusNotFound, rec.Code)
 	}
 }

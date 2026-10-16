@@ -27,7 +27,7 @@ func GenerationError(raw []byte) *Error {
 	}
 	switch code {
 	case "InputVideoSensitiveContentDetected.PrivacyInformation", "InputImageSensitiveContentDetected.PrivacyInformation":
-		return Fail("portrait_input_privacy_rejected", "参考素材触发真人隐私审核；请完成本人认证、将素材入库至 Active，并使用 asset://素材ID 生成。", 400)
+		return Fail("portrait_input_privacy_rejected", "参考素材触发真人隐私审核；当前流程仅支持虚拟人像，请使用可入库的虚拟素材，待 Active 后通过 asset://素材ID 生成。", 400)
 	case "AssetNotFound", "InvalidAssetId", "InvalidParameter.AssetId":
 		return Fail("portrait_asset_not_found", "生成引用的素材不存在或不属于当前上游账户，请重新核对素材绑定。", 400)
 	}

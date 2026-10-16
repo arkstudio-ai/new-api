@@ -105,8 +105,10 @@ func (c *Client) PrepareVideo(ctx context.Context, body map[string]any) error {
 	if len(refs) == 0 {
 		return nil
 	}
-	if _, err := c.OwnGroup(ctx, group); err != nil {
-		return err
+	if group != "" {
+		if _, err := c.OwnGroup(ctx, group); err != nil {
+			return err
+		}
 	}
 	// Bound the entire preparation, not thirty seconds per reference. If it
 	// expires, persisted asset IDs are reused on the next preparation attempt.

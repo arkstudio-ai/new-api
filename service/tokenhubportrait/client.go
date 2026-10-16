@@ -172,7 +172,7 @@ func (c *Client) Call(ctx context.Context, method, path string, body map[string]
 		if resp.StatusCode == 429 {
 			status = 429
 		}
-		e := Fail("portrait_upstream_"+code, "素材库请求未完成（"+code+"），请核对认证或素材状态。", status)
+		e := Fail("portrait_upstream_"+code, "素材库请求未完成（"+code+"），请核对项目配置、素材库权益或素材状态。", status)
 		e.Rejected = (resp.StatusCode >= 400 && resp.StatusCode < 500 && resp.StatusCode != 408) || (resp.StatusCode == 200 && code != "upstream_error")
 		if String(envelope.Result, "Id") != "" {
 			e.Rejected = false

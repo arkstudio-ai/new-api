@@ -8,89 +8,16 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/model"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
-func (c *Client) CreateSession(ctx context.Context, callback string) (map[string]any, error) {
-	body := map[string]any{}
-	// Callers may omit callbacks and poll using the token. Callback payloads are
-	// not accepted as proof of authentication; only validate-result is trusted.
-	if callback != "" {
-		body["CallbackURL"] = callback
-	}
-	result, err := c.Call(ctx, http.MethodPost, "session", body)
-	if err != nil {
-		return nil, err
-	}
-	token, link := String(result, "BytedToken"), String(result, "H5Link")
-	u, e := url.Parse(link)
-	if token == "" || e != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil {
-		return nil, Fail("portrait_upstream_invalid_response", "认证服务未返回有效的认证链接。", 502)
-	}
-	row := model.TokenHubPortraitSession{TokenHash: Digest(c.Scope + "\n" + token), Scope: c.Scope, ExpiresAt: time.Now().Unix() + 120}
-	if err = model.DB.WithContext(ctx).Create(&row).Error; err != nil {
-		return nil, err
-	}
-	return result, nil
-}
-
-func (c *Client) ValidateSession(ctx context.Context, token string) (map[string]any, error) {
-	var row model.TokenHubPortraitSession
-	if token == "" {
-		return nil, Fail("portrait_session_required", "需要提供本次认证凭证。", 400)
-	}
-	if err := model.DB.WithContext(ctx).Where("token_hash = ? AND scope = ?", Digest(c.Scope+"\n"+token), c.Scope).First(&row).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, Fail("portrait_session_not_found", "认证会话不属于当前调用者或上游账户。", 404)
-		}
-		return nil, err
-	}
-	if row.GroupId != "" {
-		if _, err := c.OwnGroup(ctx, row.GroupId); err != nil {
-			return nil, err
-		}
-		return map[string]any{"GroupId": row.GroupId}, nil
-	}
-	if row.ExpiresAt <= time.Now().Unix() {
-		return nil, Fail("portrait_session_expired", "认证会话已过期，请重新打开认证链接。", 410)
-	}
-	result, err := c.Call(ctx, http.MethodPost, "validate-result", map[string]any{"BytedToken": token})
-	if err != nil {
-		if PublicError(err).Code == "portrait_upstream_NotFound" {
-			return nil, Fail("portrait_authentication_pending", "等待本人完成手机端活体认证。", 409)
-		}
-		return nil, err
-	}
-	id := String(result, "GroupId")
-	if id == "" {
-		return nil, Fail("portrait_upstream_invalid_response", "认证服务未返回资产组。", 502)
-	}
-	group, err := c.Call(ctx, http.MethodGet, "asset-group/"+url.PathEscape(id), nil)
-	if err != nil {
-		return nil, err
-	}
-	if String(group, "Id") != id || String(group, "GroupType") != "LivenessFace" || !strings.EqualFold(String(group, "Status"), "active") {
-		return nil, Fail("portrait_group_not_active", "真人认证资产组尚未就绪。", 409)
-	}
-	err = model.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		binding := model.TokenHubPortraitGroup{BindingKey: Digest(c.Scope + "\n" + id), Scope: c.Scope, GroupId: id, GroupType: "LivenessFace", Name: String(group, "Name")}
-		if e := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&binding).Error; e != nil {
-			return e
-		}
-		return tx.Model(&row).Update("group_id", id).Error
-	})
-	if err != nil {
-		return nil, err
-	}
-	return result, nil
-}
-
 func (c *Client) CreateGroup(ctx context.Context, name string) (map[string]any, error) {
-	if strings.TrimSpace(name) == "" || len(name) > 255 {
-		return nil, Fail("portrait_group_name_invalid", "需要提供不超过 255 字节的虚拟素材组名称。", 400)
+	if strings.TrimSpace(name) == "" || utf8.RuneCountInString(name) > 64 {
+		return nil, Fail("portrait_group_name_invalid", "需要提供不超过 64 个字符的虚拟素材组名称。", 400)
 	}
 	result, err := c.Call(ctx, http.MethodPost, "asset-group", map[string]any{"Name": name, "GroupType": "AIGC"})
 	if err != nil {
@@ -109,7 +36,7 @@ func (c *Client) CreateGroup(ctx context.Context, name string) (map[string]any, 
 
 func (c *Client) OwnGroup(ctx context.Context, id string) (*model.TokenHubPortraitGroup, error) {
 	if id == "" {
-		return nil, Fail("portrait_authentication_required", "请先完成真人认证，并在 metadata.portrait_group_id 指定所属资产组；虚拟素材请先创建 AIGC 组。", 409)
+		return nil, Fail("portrait_group_selection_required", "需要选择所属的 AIGC 虚拟人像素材组。", 409)
 	}
 	var row model.TokenHubPortraitGroup
 	err := model.DB.WithContext(ctx).Where("scope = ? AND group_id = ? AND revoked = ?", c.Scope, id, false).First(&row).Error
@@ -118,6 +45,9 @@ func (c *Client) OwnGroup(ctx context.Context, id string) (*model.TokenHubPortra
 	}
 	if err != nil {
 		return nil, err
+	}
+	if row.GroupType != "AIGC" {
+		return nil, Fail("portrait_virtual_only", "当前流程仅支持 AIGC 虚拟人像素材。", 400)
 	}
 	return &row, nil
 }
@@ -139,7 +69,7 @@ func (c *Client) Group(ctx context.Context, id string) (map[string]any, error) {
 
 func (c *Client) ListGroups(ctx context.Context) ([]model.TokenHubPortraitGroup, error) {
 	var rows []model.TokenHubPortraitGroup
-	err := model.DB.WithContext(ctx).Where("scope = ? AND revoked = ?", c.Scope, false).Find(&rows).Error
+	err := model.DB.WithContext(ctx).Where("scope = ? AND revoked = ? AND group_type = ?", c.Scope, false, "AIGC").Find(&rows).Error
 	return rows, err
 }
 
@@ -199,6 +129,25 @@ func (c *Client) EnsureAsset(ctx context.Context, group, source, kind string, wa
 	if kind != "Image" && kind != "Video" && kind != "Audio" {
 		return nil, Fail("portrait_asset_type_invalid", "素材类型仅支持 Image、Video、Audio。", 400)
 	}
+	if group == "" {
+		if strings.HasPrefix(source, "asset://") {
+			var existing model.TokenHubPortraitAsset
+			err := model.DB.WithContext(ctx).Where("scope = ? AND asset_id = ? AND asset_type = ?", c.Scope, strings.TrimPrefix(source, "asset://"), kind).First(&existing).Error
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, Fail("portrait_asset_not_found", "素材 URI 不属于当前调用者或素材类型不匹配。", 404)
+			}
+			if err != nil {
+				return nil, err
+			}
+			group = existing.GroupId
+		} else {
+			var err error
+			group, err = c.DefaultVirtualGroup(ctx)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
 	if _, err := c.Group(ctx, group); err != nil {
 		return nil, err
 	}
@@ -253,7 +202,7 @@ func (c *Client) EnsureAsset(ctx context.Context, group, source, kind string, wa
 				return nil, err
 			}
 			if row.Status == "Rejected" {
-				return nil, Fail(row.FailureCode, "此前素材上传已被上游拒绝，请核对认证及素材后再处理。", 422)
+				return nil, Fail(row.FailureCode, "此前虚拟素材上传已被上游拒绝，请核对素材库权益及素材后再处理。", 422)
 			}
 			if row.AssetId == "" {
 				if row.Status == "Uploading" && row.UpdatedAt > time.Now().Unix()-60 {
@@ -274,7 +223,7 @@ func (c *Client) EnsureAsset(ctx context.Context, group, source, kind string, wa
 			return &row, nil
 		}
 		if row.Status == "Failed" {
-			return nil, Fail("portrait_asset_failed", "素材库审核失败，请检查素材是否与认证人物一致。", 422)
+			return nil, Fail("portrait_asset_failed", "虚拟人像素材审核失败，请检查素材后重新入库。", 422)
 		}
 		if wait <= 0 {
 			return &row, nil

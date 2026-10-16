@@ -283,7 +283,6 @@ func migrateDB() error {
 		&PerfMetric{},
 		&VolcAssetGroup{},
 		&VolcAsset{},
-		&TokenHubPortraitSession{},
 		&TokenHubPortraitGroup{},
 		&TokenHubPortraitAsset{},
 	)
@@ -337,7 +336,6 @@ func migrateDBFast() error {
 		{&PerfMetric{}, "PerfMetric"},
 		{&VolcAssetGroup{}, "VolcAssetGroup"},
 		{&VolcAsset{}, "VolcAsset"},
-		{&TokenHubPortraitSession{}, "TokenHubPortraitSession"},
 		{&TokenHubPortraitGroup{}, "TokenHubPortraitGroup"},
 		{&TokenHubPortraitAsset{}, "TokenHubPortraitAsset"},
 	}

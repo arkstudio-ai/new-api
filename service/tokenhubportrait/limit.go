@@ -3,6 +3,7 @@ package tokenhubportrait
 import (
 	"context"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -31,13 +32,14 @@ func (c *Client) allow(ctx context.Context, method, path string) error {
 	limit := 0
 	action := path
 	switch {
-	case path == "session" || path == "validate-result":
-		limit = 3
 	case path == "asset/list" || path == "asset-group/list":
 		limit = 10
+	case method == "GET" && strings.HasPrefix(path, "asset-group/"):
+		limit = 10
+		action = "get-group"
 	case method == "GET":
 		limit = 100
-		action = "get"
+		action = "get-asset"
 	case method == "PUT":
 		limit = 10
 		action = "update"

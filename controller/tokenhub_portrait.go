@@ -64,10 +64,6 @@ func TokenHubPortrait(c *gin.Context) {
 	id := c.Param("id")
 	var result any
 	switch {
-	case strings.HasSuffix(action, "/session"):
-		result, err = client.CreateSession(c.Request.Context(), portrait.String(body, "CallbackURL"))
-	case strings.HasSuffix(action, "/validate-result"):
-		result, err = client.ValidateSession(c.Request.Context(), portrait.String(body, "BytedToken"))
 	case strings.HasSuffix(action, "/asset-group/list"):
 		rows, e := client.ListGroups(c.Request.Context())
 		err = e
@@ -93,7 +89,7 @@ func TokenHubPortrait(c *gin.Context) {
 		result = gin.H{"Items": items, "Total": len(items)}
 	case strings.HasSuffix(action, "/asset-group"):
 		if kind := portrait.String(body, "GroupType"); kind != "" && kind != "AIGC" {
-			err = portrait.Fail("portrait_authentication_required", "真人资产组必须通过本人活体认证创建。", 409)
+			err = portrait.Fail("portrait_virtual_only", "当前流程仅支持 AIGC 虚拟人像素材组。", 400)
 			break
 		}
 		result, err = client.CreateGroup(c.Request.Context(), portrait.String(body, "Name"))

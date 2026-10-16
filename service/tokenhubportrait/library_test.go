@@ -21,18 +21,24 @@ import (
 )
 
 type portraitUpstream struct {
-	mu                          sync.Mutex
-	assets                      map[string]map[string]any
-	uploads, requests, sessions int
-	status                      string
-	loseCreate, rejectCreate    bool
-	projects                    []string
+	mu                              sync.Mutex
+	assets                          map[string]map[string]any
+	uploads, requests, groupCreates int
+	groups                          map[string]map[string]any
+	loseGroupCreate                 bool
+	activateAfter                   int
+	assetGets                       int
+	events                          []string
+	status                          string
+	loseCreate, rejectCreate        bool
+	projects                        []string
 }
 
 func (u *portraitUpstream) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	u.requests++
+	u.events = append(u.events, r.Method+" "+r.URL.Path)
 	if r.Header.Get("Authorization") != "Bearer upstream-test-key" {
 		http.Error(w, "bad auth", 401)
 		return
@@ -53,15 +59,27 @@ func (u *portraitUpstream) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	var result any
 	switch {
-	case r.URL.Path == "/v1/portrait/session":
-		u.sessions++
-		result = map[string]any{"BytedToken": fmt.Sprintf("liveness-%d", u.sessions), "H5Link": "https://h5.example.com/one-time-link"}
-	case r.URL.Path == "/v1/portrait/validate-result":
-		result = map[string]any{"GroupId": "group-real"}
+	case r.URL.Path == "/v1/portrait/asset-group/list":
+		items := []any{}
+		for _, group := range u.groups {
+			items = append(items, group)
+		}
+		result = map[string]any{"Items": items}
 	case strings.HasPrefix(r.URL.Path, "/v1/portrait/asset-group/"):
-		result = map[string]any{"Id": "group-real", "GroupType": "LivenessFace", "Status": "active"}
+		result = u.groups[strings.TrimPrefix(r.URL.Path, "/v1/portrait/asset-group/")]
+		if result == nil {
+			http.NotFound(w, r)
+			return
+		}
 	case r.URL.Path == "/v1/portrait/asset-group":
-		result = map[string]any{"Id": "group-virtual", "GroupType": "AIGC"}
+		u.groupCreates++
+		id := fmt.Sprintf("group-virtual-%d", u.groupCreates)
+		u.groups[id] = map[string]any{"Id": id, "GroupType": body["GroupType"], "Name": body["Name"], "Status": "active"}
+		if u.loseGroupCreate {
+			u.loseGroupCreate = false
+			panic(http.ErrAbortHandler)
+		}
+		result = map[string]any{"Id": id, "GroupType": "AIGC"}
 	case r.URL.Path == "/v1/portrait/asset" && r.Method == http.MethodPost:
 		u.uploads++
 		if u.rejectCreate {
@@ -85,6 +103,12 @@ func (u *portraitUpstream) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		result = map[string]any{"Items": items, "Total": len(items)}
 	case strings.HasPrefix(r.URL.Path, "/v1/portrait/asset/"):
+		u.assetGets++
+		if u.activateAfter > 0 && u.assetGets >= u.activateAfter {
+			for _, asset := range u.assets {
+				asset["Status"] = "Active"
+			}
+		}
 		result = u.assets[strings.TrimPrefix(r.URL.Path, "/v1/portrait/asset/")]
 		if result == nil {
 			http.NotFound(w, r)
@@ -114,8 +138,8 @@ func setup(t *testing.T) (*Client, *model.Channel, *portraitUpstream) {
 	require.NoError(t, err)
 	sqlDB.SetMaxOpenConns(1)
 	t.Cleanup(func() { model.DB = previous; common.RedisEnabled = previousRedis; sqlDB.Close() })
-	require.NoError(t, db.AutoMigrate(&model.TokenHubPortraitSession{}, &model.TokenHubPortraitGroup{}, &model.TokenHubPortraitAsset{}))
-	upstream := &portraitUpstream{assets: map[string]map[string]any{}, status: "Active"}
+	require.NoError(t, db.AutoMigrate(&model.TokenHubPortraitGroup{}, &model.TokenHubPortraitAsset{}))
+	upstream := &portraitUpstream{assets: map[string]map[string]any{}, groups: map[string]map[string]any{}, status: "Active"}
 	server := httptest.NewServer(upstream)
 	t.Cleanup(server.Close)
 	base := server.URL
@@ -134,19 +158,16 @@ func setup(t *testing.T) (*Client, *model.Channel, *portraitUpstream) {
 	return client, ch, upstream
 }
 
-func authenticate(t *testing.T, c *Client) string {
+func virtualGroup(t *testing.T, c *Client) string {
 	t.Helper()
-	ctx := context.Background()
-	result, err := c.CreateSession(ctx, "")
+	result, err := c.CreateGroup(context.Background(), "虚拟人像测试")
 	require.NoError(t, err)
-	result, err = c.ValidateSession(ctx, String(result, "BytedToken"))
-	require.NoError(t, err)
-	return String(result, "GroupId")
+	return String(result, "Id")
 }
 
 func TestPortraitLifecycleAndReferenceReplacement(t *testing.T) {
 	c, _, up := setup(t)
-	group := authenticate(t, c)
+	group := virtualGroup(t, c)
 	body := map[string]any{"model": "doubao-seedance-2-0-260128", "images": []any{"https://files.example/a?sig=first"}, "metadata": map[string]any{
 		"portrait_group_id": group, "duration": 15, "generate_audio": false, "seed": 0,
 		"content": []any{map[string]any{"type": "image_url", "role": "first_frame", "image_url": map[string]any{"url": "https://files.example/a?sig=first"}}, map[string]any{"type": "video_url", "role": "reference_video", "video_url": map[string]any{"url": "https://files.example/b"}}},
@@ -181,7 +202,7 @@ func TestPortraitLifecycleAndReferenceReplacement(t *testing.T) {
 
 func TestPortraitOwnershipIncludesUserTokenChannelCredentialAndProject(t *testing.T) {
 	c, ch, up := setup(t)
-	group := authenticate(t, c)
+	group := virtualGroup(t, c)
 	_, err := c.EnsureAsset(context.Background(), group, "https://files.example/video", "Video", 0)
 	require.NoError(t, err)
 	before := up.requests
@@ -207,27 +228,22 @@ func TestPortraitOwnershipIncludesUserTokenChannelCredentialAndProject(t *testin
 	require.Equal(t, before, up.requests, "unauthorized group must be blocked before upstream calls")
 }
 
-func TestPortraitAuthenticationAndSessionExpiry(t *testing.T) {
+func TestPortraitRejectsNonVirtualGroupsBeforeUpstreamCalls(t *testing.T) {
 	c, _, up := setup(t)
 	_, err := c.OwnGroup(context.Background(), "")
-	require.Equal(t, "portrait_authentication_required", PublicError(err).Code)
-	_, err = c.ValidateSession(context.Background(), "not-created-by-caller")
-	require.Equal(t, "portrait_session_not_found", PublicError(err).Code)
+	require.Equal(t, "portrait_group_selection_required", PublicError(err).Code)
+	require.NoError(t, model.DB.Create(&model.TokenHubPortraitGroup{BindingKey: "old-real-group", Scope: c.Scope, GroupId: "real-group", GroupType: "LivenessFace"}).Error)
+	_, err = c.EnsureAsset(context.Background(), "real-group", "https://files.example/video", "Video", 0)
+	require.Equal(t, "portrait_virtual_only", PublicError(err).Code)
 	require.Zero(t, up.requests)
-	session, err := c.CreateSession(context.Background(), "")
-	require.NoError(t, err)
-	require.NoError(t, model.DB.Model(&model.TokenHubPortraitSession{}).Where("scope = ?", c.Scope).Update("expires_at", time.Now().Unix()-1).Error)
-	_, err = c.ValidateSession(context.Background(), String(session, "BytedToken"))
-	require.Equal(t, "portrait_session_expired", PublicError(err).Code)
-	require.Equal(t, 1, up.requests)
 }
 
 func TestPortraitConcurrentUploadCreatesOnlyOneAsset(t *testing.T) {
 	c, _, up := setup(t)
-	group := authenticate(t, c)
+	group := virtualGroup(t, c)
 	var wg sync.WaitGroup
-	errs := make(chan error, 12)
-	for i := 0; i < 12; i++ {
+	errs := make(chan error, 8)
+	for i := 0; i < 8; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -247,7 +263,7 @@ func TestPortraitConcurrentUploadCreatesOnlyOneAsset(t *testing.T) {
 
 func TestPortraitLostCreateResponseReconcilesWithoutReupload(t *testing.T) {
 	c, _, up := setup(t)
-	group := authenticate(t, c)
+	group := virtualGroup(t, c)
 	up.mu.Lock()
 	up.loseCreate = true
 	up.mu.Unlock()
@@ -263,7 +279,7 @@ func TestPortraitLostCreateResponseReconcilesWithoutReupload(t *testing.T) {
 
 func TestPortraitUnknownCreateDoesNotRetryWhenNotFound(t *testing.T) {
 	c, _, up := setup(t)
-	group := authenticate(t, c)
+	group := virtualGroup(t, c)
 	up.mu.Lock()
 	up.loseCreate = true
 	up.mu.Unlock()
@@ -279,7 +295,7 @@ func TestPortraitUnknownCreateDoesNotRetryWhenNotFound(t *testing.T) {
 
 func TestPortraitProcessingFailureAndRevocationBlockGeneration(t *testing.T) {
 	c, _, up := setup(t)
-	group := authenticate(t, c)
+	group := virtualGroup(t, c)
 	up.mu.Lock()
 	up.status = "Processing"
 	up.mu.Unlock()
@@ -298,7 +314,7 @@ func TestPortraitProcessingFailureAndRevocationBlockGeneration(t *testing.T) {
 
 func TestPortraitDefiniteUploadErrorIsNotMisreportedAsAmbiguous(t *testing.T) {
 	c, _, up := setup(t)
-	group := authenticate(t, c)
+	group := virtualGroup(t, c)
 	up.mu.Lock()
 	up.rejectCreate = true
 	up.mu.Unlock()
@@ -330,10 +346,121 @@ func TestPortraitRateLimitSharedAcrossCallerScopes(t *testing.T) {
 	other, err := NewClient(ch, 2, 99, "")
 	require.NoError(t, err)
 	ctx := context.Background()
-	require.NoError(t, c.allow(ctx, "POST", "session"))
-	require.NoError(t, other.allow(ctx, "POST", "session"))
-	require.NoError(t, c.allow(ctx, "POST", "session"))
-	require.Equal(t, "portrait_rate_limited", PublicError(other.allow(ctx, "POST", "session")).Code)
-	// Validate-result has its own upstream action limit.
-	require.NoError(t, c.allow(ctx, "POST", "validate-result"))
+	for i := 0; i < 10; i++ {
+		require.NoError(t, c.allow(ctx, "POST", "asset/list"))
+	}
+	require.Equal(t, "portrait_rate_limited", PublicError(other.allow(ctx, "POST", "asset/list")).Code)
+	require.NoError(t, c.allow(ctx, "GET", "asset/id"))
+}
+
+func TestPortraitAutomaticallyUploadsAndWaitsForActive(t *testing.T) {
+	c, _, up := setup(t)
+	up.mu.Lock()
+	up.status = "Processing"
+	up.activateAfter = 2
+	up.mu.Unlock()
+	body := map[string]any{"model": "doubao-seedance-2-0-260128", "prompt": "虚拟人物口播", "metadata": map[string]any{"content": []any{map[string]any{"type": "image_url", "role": "reference_image", "image_url": map[string]any{"url": "https://files.example/virtual.png"}}}}}
+	require.NoError(t, c.PrepareVideo(context.Background(), body))
+	metadata := body["metadata"].(map[string]any)
+	item := metadata["content"].([]any)[0].(map[string]any)
+	require.Equal(t, "asset://asset-1", item["image_url"].(map[string]any)["url"])
+	up.mu.Lock()
+	require.Equal(t, "Active", up.assets["asset-1"]["Status"])
+	events := append([]string(nil), up.events...)
+	up.mu.Unlock()
+	require.Equal(t, "POST /v1/portrait/asset-group", events[0])
+	require.Equal(t, "POST /v1/portrait/asset", events[2])
+	require.Equal(t, "GET /v1/portrait/asset/asset-1", events[len(events)-1])
+	// A new client represents a later request/process: the group and upload are reused.
+	fresh := *c
+	_, err := fresh.EnsureAsset(context.Background(), "", "https://files.example/virtual.png?renewed", "Image", 0)
+	require.NoError(t, err)
+	up.mu.Lock()
+	defer up.mu.Unlock()
+	require.Equal(t, 1, up.groupCreates)
+	require.Equal(t, 1, up.uploads)
+}
+
+func TestPortraitProcessingTimeoutRetainsAssetForNextRequest(t *testing.T) {
+	c, _, up := setup(t)
+	up.mu.Lock()
+	up.status = "Processing"
+	up.mu.Unlock()
+	_, err := c.EnsureAsset(context.Background(), "", "https://files.example/virtual.png", "Image", time.Nanosecond)
+	require.Equal(t, "portrait_asset_processing", PublicError(err).Code)
+	var saved model.TokenHubPortraitAsset
+	require.NoError(t, model.DB.Where("scope = ?", c.Scope).First(&saved).Error)
+	require.Equal(t, "asset-1", saved.AssetId)
+	require.Equal(t, "Processing", saved.Status)
+	up.mu.Lock()
+	up.assets[saved.AssetId]["Status"] = "Active"
+	up.mu.Unlock()
+	// The later request resumes the same upload after upstream processing completes.
+	fresh := *c
+	asset, err := fresh.EnsureAsset(context.Background(), "", "https://files.example/virtual.png?renewed", "Image", time.Second)
+	require.NoError(t, err)
+	require.Equal(t, saved.AssetId, asset.AssetId)
+	require.Equal(t, "Active", asset.Status)
+	up.mu.Lock()
+	defer up.mu.Unlock()
+	require.Equal(t, 1, up.groupCreates)
+	require.Equal(t, 1, up.uploads)
+}
+
+func TestPortraitDefaultGroupLostResponseRecoversWithoutRecreating(t *testing.T) {
+	c, _, up := setup(t)
+	up.mu.Lock()
+	up.loseGroupCreate = true
+	up.mu.Unlock()
+	_, err := c.DefaultVirtualGroup(context.Background())
+	require.Equal(t, "portrait_group_submission_unknown", PublicError(err).Code)
+	fresh := *c
+	group, err := fresh.DefaultVirtualGroup(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, "group-virtual-1", group)
+	up.mu.Lock()
+	defer up.mu.Unlock()
+	require.Equal(t, 1, up.groupCreates)
+}
+
+func TestPortraitDefaultGroupUnknownOutcomeNeverBlindlyRecreates(t *testing.T) {
+	c, _, up := setup(t)
+	up.mu.Lock()
+	up.loseGroupCreate = true
+	up.mu.Unlock()
+	_, err := c.DefaultVirtualGroup(context.Background())
+	require.Error(t, err)
+	up.mu.Lock()
+	up.groups = map[string]map[string]any{}
+	up.mu.Unlock()
+	_, err = c.DefaultVirtualGroup(context.Background())
+	require.Equal(t, "portrait_group_submission_unknown", PublicError(err).Code)
+	up.mu.Lock()
+	defer up.mu.Unlock()
+	require.Equal(t, 1, up.groupCreates)
+}
+
+func TestPortraitConcurrentDefaultLibraryCreatesOneGroup(t *testing.T) {
+	c, _, up := setup(t)
+	var wg sync.WaitGroup
+	errs := make(chan error, 8)
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := c.EnsureAsset(context.Background(), "", "https://files.example/virtual.png", "Image", 0)
+			errs <- err
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			require.Contains(t, []string{"portrait_group_processing", "portrait_asset_processing"}, PublicError(err).Code)
+		}
+	}
+	up.mu.Lock()
+	defer up.mu.Unlock()
+	require.Equal(t, 1, up.groupCreates)
+	require.Equal(t, 1, up.uploads)
 }

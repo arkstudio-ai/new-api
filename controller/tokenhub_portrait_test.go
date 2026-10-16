@@ -19,7 +19,7 @@ func TestPortraitAPIAccountIsolationAndProjectInjection(t *testing.T) {
 	previousDB, previousLog := model.DB, model.LOG_DB
 	t.Cleanup(func() { model.DB, model.LOG_DB = previousDB, previousLog })
 	db := setupModelListControllerTestDB(t)
-	require.NoError(t, db.AutoMigrate(&model.Channel{}, &model.TokenHubPortraitSession{}, &model.TokenHubPortraitGroup{}, &model.TokenHubPortraitAsset{}))
+	require.NoError(t, db.AutoMigrate(&model.Channel{}, &model.TokenHubPortraitGroup{}, &model.TokenHubPortraitAsset{}))
 	upstreamCalls := 0
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		upstreamCalls++
@@ -27,7 +27,7 @@ func TestPortraitAPIAccountIsolationAndProjectInjection(t *testing.T) {
 		var body map[string]any
 		require.NoError(t, common.DecodeJson(r.Body, &body))
 		require.Equal(t, portrait.DefaultProject, body["ProjectName"])
-		raw, _ := common.Marshal(gin.H{"ResponseMetadata": gin.H{}, "Result": gin.H{"BytedToken": "test-liveness-token", "H5Link": "https://h5.example.com/verification"}})
+		raw, _ := common.Marshal(gin.H{"ResponseMetadata": gin.H{}, "Result": gin.H{"Id": "group-virtual", "GroupType": "AIGC"}})
 		w.Write(raw)
 	}))
 	defer upstream.Close()
@@ -41,8 +41,6 @@ func TestPortraitAPIAccountIsolationAndProjectInjection(t *testing.T) {
 		c.Set("token_id", 7)
 		common.SetContextKey(c, constant.ContextKeyUsingGroup, "default")
 	})
-	r.POST("/v1/portrait/session", TokenHubPortrait)
-	r.POST("/v1/portrait/validate-result", TokenHubPortrait)
 	r.POST("/v1/portrait/asset-group", TokenHubPortrait)
 	r.GET("/v1/portrait/asset-group/:id", TokenHubPortrait)
 	request := func(method, path, body string) *httptest.ResponseRecorder {
@@ -52,17 +50,15 @@ func TestPortraitAPIAccountIsolationAndProjectInjection(t *testing.T) {
 		r.ServeHTTP(rec, req)
 		return rec
 	}
-	rec := request(http.MethodPost, "/v1/portrait/session?channel_id=128", `{"ProjectName":"attacker-project"}`)
+	rec := request(http.MethodPost, "/v1/portrait/asset-group?channel_id=128", `{"Name":"虚拟人物","ProjectName":"attacker-project"}`)
 	require.Equal(t, 200, rec.Code)
-	require.Contains(t, rec.Body.String(), "https://h5.example.com/verification")
+	require.Contains(t, rec.Body.String(), "group-virtual")
 	require.Equal(t, 1, upstreamCalls)
 	rec = request(http.MethodGet, "/v1/portrait/asset-group/group-foreign", "")
 	require.Equal(t, 404, rec.Code)
-	rec = request(http.MethodPost, "/v1/portrait/validate-result", `{"BytedToken":"another-users-token"}`)
-	require.Equal(t, 404, rec.Code)
 	rec = request(http.MethodPost, "/v1/portrait/asset-group", `{"Name":"real person","GroupType":"LivenessFace"}`)
-	require.Equal(t, 409, rec.Code)
-	rec = request(http.MethodPost, "/v1/portrait/session?channel_id=999", `{}`)
+	require.Equal(t, 400, rec.Code)
+	rec = request(http.MethodPost, "/v1/portrait/asset-group?channel_id=999", `{"Name":"虚拟人物"}`)
 	require.Equal(t, 400, rec.Code)
 	require.Equal(t, 1, upstreamCalls, "unauthorized operations must not reach the upstream account")
 }

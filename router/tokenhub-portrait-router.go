@@ -8,8 +8,6 @@ import (
 
 func SetTokenHubPortraitRouter(router *gin.Engine) {
 	r := router.Group("/v1/portrait", middleware.RouteTag("relay"), middleware.TokenAuth())
-	r.POST("/session", controller.TokenHubPortrait)
-	r.POST("/validate-result", controller.TokenHubPortrait)
 	r.POST("/asset-group", controller.TokenHubPortrait)
 	r.POST("/asset-group/list", controller.TokenHubPortrait)
 	r.GET("/asset-group/:id", controller.TokenHubPortrait)
