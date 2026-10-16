@@ -283,6 +283,9 @@ func migrateDB() error {
 		&PerfMetric{},
 		&VolcAssetGroup{},
 		&VolcAsset{},
+		&TokenHubPortraitSession{},
+		&TokenHubPortraitGroup{},
+		&TokenHubPortraitAsset{},
 	)
 	if err != nil {
 		return err
@@ -334,6 +337,9 @@ func migrateDBFast() error {
 		{&PerfMetric{}, "PerfMetric"},
 		{&VolcAssetGroup{}, "VolcAssetGroup"},
 		{&VolcAsset{}, "VolcAsset"},
+		{&TokenHubPortraitSession{}, "TokenHubPortraitSession"},
+		{&TokenHubPortraitGroup{}, "TokenHubPortraitGroup"},
+		{&TokenHubPortraitAsset{}, "TokenHubPortraitAsset"},
 	}
 	// 动态计算migration数量，确保errChan缓冲区足够大
 	errChan := make(chan error, len(migrations))

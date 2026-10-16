@@ -614,6 +614,13 @@ func shouldRetryTaskRelay(c *gin.Context, channelId int, taskErr *dto.TaskError,
 	if taskErr == nil {
 		return false
 	}
+	// Portrait preparation and generation use an account-bound material library.
+	// Retrying through another channel can lose that binding or duplicate a
+	// generation whose response was lost. Require an explicit recovery instead.
+	settings, _ := common.GetContextKeyType[dto.ChannelOtherSettings](c, constant.ContextKeyChannelOtherSetting)
+	if settings.TokenHubPortraitEnabled {
+		return false
+	}
 	if service.ShouldSkipRetryAfterChannelAffinityFailure(c) {
 		return false
 	}

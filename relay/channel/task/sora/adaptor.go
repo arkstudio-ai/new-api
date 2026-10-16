@@ -39,6 +39,9 @@ type ImageURL struct {
 }
 
 type responseTask struct {
+	Metadata *struct {
+		URL string `json:"url"`
+	} `json:"metadata,omitempty"`
 	ID                 string `json:"id"`
 	TaskID             string `json:"task_id,omitempty"` //兼容旧接口
 	Object             string `json:"object"`
@@ -66,12 +69,14 @@ type TaskAdaptor struct {
 	ChannelType int
 	apiKey      string
 	baseURL     string
+	tokenHub    bool
 }
 
 func (a *TaskAdaptor) Init(info *relaycommon.RelayInfo) {
 	a.ChannelType = info.ChannelType
 	a.baseURL = info.ChannelBaseUrl
 	a.apiKey = info.ApiKey
+	a.tokenHub = info.ChannelOtherSettings.TokenHubPortraitEnabled
 }
 
 func validateRemixRequest(c *gin.Context) *dto.TaskError {
@@ -157,6 +162,11 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 	if strings.HasPrefix(contentType, "application/json") {
 		var bodyMap map[string]interface{}
 		if err := common.Unmarshal(cachedBody, &bodyMap); err == nil {
+			if prepared, ok := c.Get("tokenhub_prepared_body"); ok && prepared != nil {
+				if p, valid := prepared.(map[string]any); valid {
+					bodyMap = p
+				}
+			}
 			bodyMap["model"] = info.UpstreamModelName
 			if newBody, err := common.Marshal(bodyMap); err == nil {
 				return bytes.NewReader(newBody), nil
@@ -302,7 +312,17 @@ func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, e
 		taskResult.Status = model.TaskStatusQueued
 	case "processing", "in_progress":
 		taskResult.Status = model.TaskStatusInProgress
+	case "unknown":
+		if a.tokenHub {
+			taskResult.Status = model.TaskStatusInProgress
+		}
 	case "completed":
+		if a.tokenHub {
+			if resTask.Metadata == nil || strings.TrimSpace(resTask.Metadata.URL) == "" {
+				return nil, fmt.Errorf("TokenHub completed task has no metadata.url; keep polling")
+			}
+			taskResult.Url = resTask.Metadata.URL
+		}
 		taskResult.Status = model.TaskStatusSuccess
 		// Url intentionally left empty — the caller constructs the proxy URL using the public task ID
 	case "failed", "cancelled":
@@ -326,6 +346,9 @@ func (a *TaskAdaptor) ConvertToOpenAIVideo(task *model.Task) ([]byte, error) {
 	var err error
 	if data, err = sjson.SetBytes(data, "id", task.TaskID); err != nil {
 		return nil, errors.Wrap(err, "set id failed")
+	}
+	if data, err = sjson.SetBytes(data, "task_id", task.TaskID); err != nil {
+		return nil, err
 	}
 	return data, nil
 }

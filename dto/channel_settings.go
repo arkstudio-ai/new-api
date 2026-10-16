@@ -24,6 +24,8 @@ const (
 )
 
 type ChannelOtherSettings struct {
+	TokenHubPortraitEnabled               bool          `json:"tokenhub_portrait_enabled,omitempty"`
+	TokenHubPortraitProject               string        `json:"tokenhub_portrait_project,omitempty"`
 	AzureResponsesVersion                 string        `json:"azure_responses_version,omitempty"`
 	VertexKeyType                         VertexKeyType `json:"vertex_key_type,omitempty"` // "json" or "api_key"
 	OpenRouterEnterprise                  *bool         `json:"openrouter_enterprise,omitempty"`
