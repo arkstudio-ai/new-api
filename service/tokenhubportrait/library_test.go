@@ -175,6 +175,26 @@ func virtualGroup(t *testing.T, c *Client) string {
 	return String(result, "Id")
 }
 
+func TestPortraitProjectUsesBusinessDefaultOrExplicitConfiguration(t *testing.T) {
+	c, ch, up := setup(t)
+	require.Equal(t, "深圳赞卫数字科技有限公司", c.Project)
+	settings := ch.GetOtherSettings()
+	settings.TokenHubPortraitProject = "provider-confirmed-project"
+	ch.SetOtherSettings(settings)
+	configured, err := NewClient(ch, 1, 7, "")
+	require.NoError(t, err)
+	require.Equal(t, settings.TokenHubPortraitProject, configured.Project)
+	require.NotEqual(t, c.Scope, configured.Scope)
+	group := virtualGroup(t, configured)
+	_, err = configured.Group(context.Background(), group)
+	require.NoError(t, err)
+	up.mu.Lock()
+	defer up.mu.Unlock()
+	for _, project := range up.projects {
+		require.Equal(t, settings.TokenHubPortraitProject, project)
+	}
+}
+
 func TestPortraitLifecycleAndReferenceReplacement(t *testing.T) {
 	c, _, up := setup(t)
 	group := virtualGroup(t, c)

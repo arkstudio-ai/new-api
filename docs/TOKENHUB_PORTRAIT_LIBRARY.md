@@ -15,15 +15,15 @@
 ```json
 {
   "tokenhub_portrait_enabled": true,
-  "tokenhub_portrait_project": "default"
+  "tokenhub_portrait_project": "深圳赞卫数字科技有限公司"
 }
 ```
 
 - 渠道类型：55（Sora）。Base URL：`https://tokenhub.moligroup.com`。
 - Key：TokenHub Bearer API key；仅单密钥账户，不支持多 Key 轮换。
 - models：配置实际开通的 Seedance 2.0 / Fast / 2.5 ID。
-- `tokenhub_portrait_project` 为空时采用 `default`；显式配置不会自动回退到其他项目。客户端 ProjectName 不能覆盖服务端配置。素材项目必须与实际视频推理所用上游账户的项目一致，参见[火山官方项目隔离说明](https://docs.volcengine.com/docs/ark/private-virtual-avatar-library-guide-preview?lang=zh)。
-- 提供的接入文档总说明要求公司中文名，创建示例却使用 `default`。2026-10-16 实测公司中文名创建返回 `InvalidParameter.ProjectName`，`default` 可创建并入库；上线仍需 TokenHub 确认素材与推理通道属于同一上游账户和项目。
+- `tokenhub_portrait_project` 为空时采用文档明确要求的业务隔离项目 `深圳赞卫数字科技有限公司`；如供应商确认了不同的实际项目名，必须在渠道配置中显式填写。项目被拒绝时直接报错，不自动尝试 `default` 或其他项目。客户端 ProjectName 不能覆盖服务端配置。素材项目必须与实际视频推理所用上游账户的项目一致，参见[火山官方项目隔离说明](https://docs.volcengine.com/docs/ark/private-virtual-avatar-library-guide-preview?lang=zh)。
+- 提供的接入文档总说明要求公司中文名，创建示例却使用 `default`。此前在 `default` 成功入库只是诊断结果，不能证明这是正确业务项目，也不能据此把 `default` 设为默认。TokenHub 反馈项目名有误后，已恢复文档业务项目，并保留服务端显式配置能力。
 - 其他渠道默认关闭，不使用旧火山 AK/SK 接口。
 - 首次启动通过 GORM 添加 `token_hub_portrait_groups/assets` 两张表；字段和查询兼容 SQLite/MySQL/PostgreSQL。升级不删除历史表或上游资源。
 
@@ -109,10 +109,12 @@ TokenHub 实际 GET 接口要求 JSON 请求体包含 Id 和 ProjectName。网�
 - 从 legomind 包提取一张虚拟人像，上传文件存储后创建 AIGC 组 `group-20261016182611-qwn58`。
 - 新素材 `asset-20261016182611-zhsq6` 已由 Processing 转为 Active，随后 GET 再次确认仍 Active，ProjectName 为 default。
 - 使用原 `doubao-seedance-2-0-260128` 模型、4 秒、720p、9:16，以该 asset URI 提交一次生成，返回 HTTP 400 / InvalidParameter，明确称素材不存在，没有返回任务 ID。
-- 说明入库成功，但推理端不能读取素材。素材 API 与视频 API 的上游账户或项目路由不一致是待 TokenHub 确认的推测，不能报告端到端出片成功。没有自动重试，也没有改用其他模型或原始图片 URL。
+- 说明入库成功，但推理端不能读取素材。这次诊断入库使用的 default 与文档业务项目不一致，不能据此认定 TokenHub 上游账户路由故障；需先确认正确业务项目和凭据绑定，再重新入库验证，不能报告端到端出片成功。没有自动重试，也没有改用其他模型或原始图片 URL。
 - 联调同时修正了组缺少 Status、素材 Name 长度和恢复查询缺少 Filter.GroupType 的兼容问题，并识别实际的嵌套“素材不存在”生成错误。
 
-脱敏证据见 [真实联调记录](evidence/tokenhub-virtual-portrait-live-20261016.json)。尚未完成：成功出片、真实 DELETE、生产部署、OpenBox 路由切换及整包导入。已发起一次被明确拒绝的生成请求；供应商账单未核对。
+TokenHub 反馈项目名有误后，于 2026-10-16 20:19:35（上海时间）重新以 `ProjectName: 深圳赞卫数字科技有限公司` 调用 CreateAssetGroup，对外接口仍返回 HTTP 400 / InvalidParameter.ProjectName；RequestId 为 `20261016201935EC161EAA731FC30F1D2E`。没有换项目上传或重新提交视频。需供应商确认该凭据实际绑定的准确 ProjectName，或修复文档指定项目的配置。复核证据见 [项目复核记录](evidence/tokenhub-project-recheck-20261016.json)。
+
+脱敏证据见 [此前 default 项目诊断记录](evidence/tokenhub-virtual-portrait-live-20261016.json)。尚未完成：成功出片、真实 DELETE、生产部署、OpenBox 路由切换及整包导入。已发起一次被明确拒绝的生成请求；供应商账单未核对。
 
 ## 测试
 

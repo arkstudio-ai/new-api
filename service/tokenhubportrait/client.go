@@ -24,10 +24,11 @@ import (
 	"github.com/QuantumNous/new-api/service"
 )
 
-// TokenHub forwards this to Ark's resource project. The supplied integration
-// document contradicts its own default-project example; live AIGC creation
-// rejects the company display name with InvalidParameter.ProjectName.
-const DefaultProject = "default"
+// Use TokenHub's documented business-isolation project, not the generic Ark
+// example's "default". A rejected project must be corrected by the provider or
+// explicitly configured; successful upload into another project is not proof
+// that the video inference route can access that project's assets.
+const DefaultProject = "深圳赞卫数字科技有限公司"
 
 // Error contains reviewed public diagnostics, not arbitrary upstream messages.
 type Error struct {
