@@ -1,0 +1,30 @@
+{
+  "stage": "company_project_recheck",
+  "endpoint": "https://tokenhub.moligroup.com/v1/portrait/asset-group",
+  "request": {
+    "Name": "new-api-virtual-company-recheck-20261016",
+    "GroupType": "AIGC",
+    "ProjectName": "深圳赞卫数字科技有限公司"
+  },
+  "http_status": 400,
+  "response": {
+    "ResponseMetadata": {
+      "RequestId": "20261016201935EC161EAA731FC30F1D2E",
+      "Action": "CreateAssetGroup",
+      "Version": "2024-01-01",
+      "Service": "ark",
+      "Region": "cn-beijing",
+      "Error": {
+        "Code": "InvalidParameter.ProjectName",
+        "Message": "The specified parameter ProjectName is invalid.",
+        "Data": {
+          "__Message.parameter": "ProjectName"
+        }
+      }
+    }
+  },
+  "checked_at": "2026-10-16T20:21:02+08:00",
+  "verification_route": "Direct TokenHub using the same existing OpenBox upstream credential; production route unchanged",
+  "previous_diagnostic_project": "default",
+  "interpretation": "default ingestion success does not establish correct business project. Documented business project still rejected by live CreateAssetGroup; correct project and credential binding require provider confirmation."
+}

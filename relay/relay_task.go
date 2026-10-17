@@ -19,6 +19,7 @@ import (
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/service"
+	portrait "github.com/QuantumNous/new-api/service/tokenhubportrait"
 	"github.com/gin-gonic/gin"
 )
 
@@ -171,6 +172,45 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 		return nil, service.TaskErrorWrapperLocal(err, "model_mapping_failed", http.StatusBadRequest)
 	}
 
+	// Prepare TokenHub references before any video quota is reserved. Store a
+	// separate wire body; retries must always start from the original request.
+	c.Set("tokenhub_prepared_body", nil)
+	if info.ChannelType == constant.ChannelTypeSora && info.ChannelOtherSettings.TokenHubPortraitEnabled {
+		if !strings.HasPrefix(info.UpstreamModelName, "doubao-seedance-") {
+			return nil, service.TaskErrorWrapperLocal(fmt.Errorf("TokenHub portrait channels only support declared Seedance models"), "portrait_model_unsupported", 400)
+		}
+		if !strings.HasPrefix(c.GetHeader("Content-Type"), "application/json") {
+			return nil, service.TaskErrorWrapperLocal(fmt.Errorf("TokenHub portrait preparation requires JSON media URLs"), "portrait_json_required", 400)
+		}
+		ch, prepErr := model.GetChannelById(info.ChannelId, true)
+		var client *portrait.Client
+		if prepErr == nil {
+			client, prepErr = portrait.NewClient(ch, info.UserId, info.TokenId, info.ApiKey)
+		}
+		storage, storageErr := common.GetBodyStorage(c)
+		if prepErr == nil {
+			prepErr = storageErr
+		}
+		var prepared map[string]any
+		if prepErr == nil {
+			var raw []byte
+			raw, prepErr = storage.Bytes()
+			if prepErr == nil {
+				prepErr = common.Unmarshal(raw, &prepared)
+			}
+		}
+		if prepErr == nil {
+			prepErr = client.PrepareVideo(c.Request.Context(), prepared)
+		}
+		if prepErr != nil {
+			public := portrait.PublicError(prepErr)
+			// An explicit preparation refusal has not submitted a video. Use 400
+			// so existing video clients safely classify it as a definite refusal.
+			return nil, service.TaskErrorWrapperLocal(public, public.Code, 400)
+		}
+		c.Set("tokenhub_prepared_body", prepared)
+	}
+
 	// 3. 预生成公开 task ID（仅首次）
 	if info.PublicTaskID == "" {
 		info.PublicTaskID = model.GenerateTaskID()
@@ -222,7 +262,18 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 		return nil, service.TaskErrorWrapper(err, "do_request_failed", http.StatusInternalServerError)
 	}
 	if resp != nil && resp.StatusCode != http.StatusOK {
-		responseBody, _ := io.ReadAll(resp.Body)
+		defer resp.Body.Close()
+		var errorReader io.Reader = resp.Body
+		if info.ChannelOtherSettings.TokenHubPortraitEnabled {
+			errorReader = io.LimitReader(resp.Body, 65537)
+		}
+		responseBody, _ := io.ReadAll(errorReader)
+		if info.ChannelOtherSettings.TokenHubPortraitEnabled {
+			if public := portrait.GenerationError(responseBody); public != nil {
+				return nil, service.TaskErrorWrapperLocal(public, public.Code, public.Status)
+			}
+			return nil, service.TaskErrorWrapperLocal(fmt.Errorf("TokenHub 视频请求未完成，请通过任务记录核对结果。"), "tokenhub_generation_failed", resp.StatusCode)
+		}
 		return nil, service.TaskErrorWrapper(fmt.Errorf("%s", string(responseBody)), "fail_to_fetch_task", resp.StatusCode)
 	}
 

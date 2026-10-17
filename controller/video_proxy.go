@@ -107,8 +107,17 @@ func VideoProxy(c *gin.Context) {
 			return
 		}
 	case constant.ChannelTypeOpenAI, constant.ChannelTypeSora:
-		videoURL = fmt.Sprintf("%s/v1/videos/%s/content", baseURL, task.GetUpstreamTaskID())
-		req.Header.Set("Authorization", "Bearer "+channel.Key)
+		if channel.Type == constant.ChannelTypeSora && channel.GetOtherSettings().TokenHubPortraitEnabled {
+			// TokenHub returns the downloadable result in metadata.url. Never
+			// send its bearer credential to that external media host.
+			videoURL = task.GetResultURL()
+			if strings.Contains(videoURL, "/v1/videos/"+task.TaskID+"/content") {
+				videoURL = ""
+			}
+		} else {
+			videoURL = fmt.Sprintf("%s/v1/videos/%s/content", baseURL, task.GetUpstreamTaskID())
+			req.Header.Set("Authorization", "Bearer "+channel.Key)
+		}
 	default:
 		// Video URL is stored in PrivateData.ResultURL (fallback to FailReason for old data)
 		videoURL = task.GetResultURL()
