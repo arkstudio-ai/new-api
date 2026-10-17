@@ -54,6 +54,7 @@ func Digest(s string) string { h := sha256.Sum256([]byte(s)); return hex.EncodeT
 
 type Client struct {
 	BaseURL, Key, Project, Scope string
+	OmitProject                  bool
 	HTTP                         *http.Client
 	// Tests can replace content hashing without making private URLs permissible.
 	SourceDigest func(context.Context, string) (string, error)
@@ -77,6 +78,10 @@ func NewClient(ch *model.Channel, userID, tokenID int, key string) (*Client, err
 		return nil, Fail("portrait_account_configuration", "素材库渠道未配置上游密钥。", 400)
 	}
 	project := strings.TrimSpace(ch.GetOtherSettings().TokenHubPortraitProject)
+	omitProject := ch.GetOtherSettings().TokenHubPortraitOmitProject
+	if omitProject && project == "" {
+		return nil, Fail("portrait_account_configuration", "省略上游 ProjectName 时，需在渠道配置已核验的实际项目名用于素材归属校验。", 400)
+	}
 	if project == "" {
 		project = DefaultProject
 	}
@@ -98,8 +103,12 @@ func NewClient(ch *model.Channel, userID, tokenID int, key string) (*Client, err
 	// Do not follow redirects with the TokenHub bearer credential.
 	clone := *hc
 	clone.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	scope := Digest(strconv.Itoa(userID) + "\n" + strconv.Itoa(tokenID) + "\n" + strconv.Itoa(ch.Id) + "\n" + base + "\n" + Digest(key) + "\n" + project)
-	c := &Client{BaseURL: base, Key: key, Project: project, Scope: scope, HTTP: &clone}
+	scopeInput := strconv.Itoa(userID) + "\n" + strconv.Itoa(tokenID) + "\n" + strconv.Itoa(ch.Id) + "\n" + base + "\n" + Digest(key) + "\n" + project
+	if omitProject {
+		scopeInput += "\nomit-project-v1"
+	}
+	scope := Digest(scopeInput)
+	c := &Client{BaseURL: base, Key: key, Project: project, Scope: scope, OmitProject: omitProject, HTTP: &clone}
 	c.SourceDigest = hashSource
 	return c, nil
 }
@@ -116,7 +125,11 @@ func (c *Client) Call(ctx context.Context, method, path string, body map[string]
 	for k, v := range body {
 		payload[k] = v
 	}
-	payload["ProjectName"] = c.Project
+	if c.OmitProject {
+		delete(payload, "ProjectName")
+	} else {
+		payload["ProjectName"] = c.Project
+	}
 	if method == http.MethodGet || method == http.MethodDelete {
 		parts := strings.SplitN(path, "/", 2)
 		if len(parts) == 2 && (parts[0] == "asset" || parts[0] == "asset-group") {

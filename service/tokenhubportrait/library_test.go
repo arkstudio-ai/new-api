@@ -33,6 +33,8 @@ type portraitUpstream struct {
 	status                          string
 	loseCreate, rejectCreate        bool
 	projects                        []string
+	requireOmittedProject           bool
+	implicitProject                 string
 }
 
 func (u *portraitUpstream) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -53,6 +55,16 @@ func (u *portraitUpstream) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		u.projects = append(u.projects, String(body, "ProjectName"))
 	} else {
 		u.projects = append(u.projects, r.URL.Query().Get("ProjectName"))
+	}
+	if u.requireOmittedProject {
+		if _, exists := body["ProjectName"]; exists {
+			http.Error(w, "ProjectName must be omitted", 400)
+			return
+		}
+	}
+	project := String(body, "ProjectName")
+	if project == "" {
+		project = u.implicitProject
 	}
 	if r.Method == http.MethodGet && String(body, "Id") != strings.TrimPrefix(strings.TrimPrefix(r.URL.Path, "/v1/portrait/asset-group/"), "/v1/portrait/asset/") {
 		http.Error(w, "Id missing or mismatched", 400)
@@ -75,7 +87,7 @@ func (u *portraitUpstream) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.URL.Path == "/v1/portrait/asset-group":
 		u.groupCreates++
 		id := fmt.Sprintf("group-virtual-%d", u.groupCreates)
-		u.groups[id] = map[string]any{"Id": id, "GroupType": body["GroupType"], "Name": body["Name"], "ProjectName": body["ProjectName"]}
+		u.groups[id] = map[string]any{"Id": id, "GroupType": body["GroupType"], "Name": body["Name"], "ProjectName": project}
 		if u.loseGroupCreate {
 			u.loseGroupCreate = false
 			panic(http.ErrAbortHandler)
@@ -95,7 +107,7 @@ func (u *portraitUpstream) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		id := fmt.Sprintf("asset-%d", u.uploads)
-		u.assets[id] = map[string]any{"Id": id, "GroupId": body["GroupId"], "AssetType": body["AssetType"], "Name": body["Name"], "Status": u.status, "URL": "https://media.example.com/retained"}
+		u.assets[id] = map[string]any{"Id": id, "GroupId": body["GroupId"], "AssetType": body["AssetType"], "Name": body["Name"], "Status": u.status, "URL": "https://media.example.com/retained", "ProjectName": project}
 		if u.loseCreate {
 			u.loseCreate = false
 			panic(http.ErrAbortHandler)
@@ -193,6 +205,41 @@ func TestPortraitProjectUsesBusinessDefaultOrExplicitConfiguration(t *testing.T)
 	for _, project := range up.projects {
 		require.Equal(t, settings.TokenHubPortraitProject, project)
 	}
+}
+
+func TestPortraitOmittedProjectStillValidatesActualProject(t *testing.T) {
+	c, ch, up := setup(t)
+	settings := ch.GetOtherSettings()
+	settings.TokenHubPortraitProject = "moligroup"
+	settings.TokenHubPortraitOmitProject = true
+	ch.SetOtherSettings(settings)
+	omitted, err := NewClient(ch, 1, 7, "")
+	require.NoError(t, err)
+	omitted.SourceDigest = c.SourceDigest
+	up.requireOmittedProject, up.implicitProject = true, "moligroup"
+	body := map[string]any{"images": []any{"https://files.example/virtual.png"}}
+	require.NoError(t, omitted.PrepareVideo(context.Background(), body))
+	require.Equal(t, "asset://asset-1", body["images"].([]any)[0])
+	// Even an explicit caller field must not override the omission policy.
+	_, err = omitted.Call(context.Background(), http.MethodPost, "asset-group/list", map[string]any{"ProjectName": "attacker-project"})
+	require.NoError(t, err)
+	for _, sent := range up.projects {
+		require.Empty(t, sent)
+	}
+	settings.TokenHubPortraitOmitProject = false
+	ch.SetOtherSettings(settings)
+	explicit, err := NewClient(ch, 1, 7, "")
+	require.NoError(t, err)
+	require.NotEqual(t, explicit.Scope, omitted.Scope)
+	up.mu.Lock()
+	up.groups["group-virtual-1"]["ProjectName"] = "unexpected-project"
+	up.mu.Unlock()
+	_, err = omitted.Group(context.Background(), "group-virtual-1")
+	require.Equal(t, "portrait_group_identity_mismatch", PublicError(err).Code)
+	settings.TokenHubPortraitOmitProject, settings.TokenHubPortraitProject = true, ""
+	ch.SetOtherSettings(settings)
+	_, err = NewClient(ch, 1, 7, "")
+	require.Equal(t, "portrait_account_configuration", PublicError(err).Code)
 }
 
 func TestPortraitLifecycleAndReferenceReplacement(t *testing.T) {

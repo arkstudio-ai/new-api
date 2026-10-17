@@ -15,15 +15,17 @@
 ```json
 {
   "tokenhub_portrait_enabled": true,
-  "tokenhub_portrait_project": "深圳赞卫数字科技有限公司"
+  "tokenhub_portrait_project": "moligroup",
+  "tokenhub_portrait_omit_project": true
 }
 ```
 
 - 渠道类型：55（Sora）。Base URL：`https://tokenhub.moligroup.com`。
 - Key：TokenHub Bearer API key；仅单密钥账户，不支持多 Key 轮换。
 - models：配置实际开通的 Seedance 2.0 / Fast / 2.5 ID。
-- `tokenhub_portrait_project` 为空时采用文档明确要求的业务隔离项目 `深圳赞卫数字科技有限公司`；如供应商确认了不同的实际项目名，必须在渠道配置中显式填写。项目被拒绝时直接报错，不自动尝试 `default` 或其他项目。客户端 ProjectName 不能覆盖服务端配置。素材项目必须与实际视频推理所用上游账户的项目一致，参见[火山官方项目隔离说明](https://docs.volcengine.com/docs/ark/private-virtual-avatar-library-guide-preview?lang=zh)。
-- 提供的接入文档总说明要求公司中文名，创建示例却使用 `default`。此前在 `default` 成功入库只是诊断结果，不能证明这是正确业务项目，也不能据此把 `default` 设为默认。TokenHub 反馈项目名有误后，已恢复文档业务项目，并保留服务端显式配置能力。
+- 本次生产凭据已实测：省略上游 ProjectName 时，实际项目为 `moligroup`。配置 `tokenhub_portrait_omit_project: true` 后，所有素材 API（包括 GET/DELETE）均不发送 ProjectName，客户端自带该字段也会被移除。
+- 省略模式下仍必须配置 `tokenhub_portrait_project: moligroup`，该值仅用于归属校验与缓存隔离；若上游返回其他项目则阻止生成。显式与省略模式的缓存隔离，不能混用此前 default 项目的素材。
+- 未开启省略模式时保留显式项目配置；空值沿用旧文档业务名。项目被拒绝时直接报错，不自动换项目。
 - 其他渠道默认关闭，不使用旧火山 AK/SK 接口。
 - 首次启动通过 GORM 添加 `token_hub_portrait_groups/assets` 两张表；字段和查询兼容 SQLite/MySQL/PostgreSQL。升级不删除历史表或上游资源。
 
@@ -75,7 +77,7 @@ GroupId 可省略，自动使用默认虚拟素材组，也可传已绑定的 AI
 
 默认组及自动入库素材使用确定性 Name，以恢复未知创建结果；素材 Name 不超过 64 个字符。AIGC 组真实响应没有 Status，按 Id、GroupType 和返回的 ProjectName 校验；若显式返回 Status，则仍检查 active。素材必须达到 Active。自动入库素材暂不开放改名。删除是显式管理操作，不在失败、超时、重试或回滚时自动执行；上游删除成功后保留本地失效记录。已删除默认组不会自动重建，需要明确选择新的 AIGC 组。
 
-TokenHub 实际 GET 接口要求 JSON 请求体包含 Id 和 ProjectName。网关替调用方补齐，下游 GET 无需请求体。DELETE 采用相同的显式 Id / ProjectName JSON；真实删除尚未联调。
+TokenHub 实际 GET 接口需要 JSON 请求体中的 Id。显式模式同时发送 ProjectName，省略模式不发送该字段；网关替调用方构造请求，下游 GET 无需请求体。DELETE 采用相同的显式 Id / ProjectName JSON；真实删除尚未联调。
 
 ## 复用、超时与收费边界
 
@@ -126,3 +128,9 @@ go vet ./service/tokenhubportrait ./relay/channel/task/sora ./controller ./route
 ```
 
 全仓回归存在基线限制：干净 main 同样有模型列表测试和 Claude 文件内容转换测试失败。根包需要先构建 web/classic/dist 与 web/default/dist 才能满足 go:embed，不能报告全仓测试通过。
+
+## 2026-10-17 上线验证
+
+省略 ProjectName 创建与查询均成功，真实项目为 moligroup。虚拟人像已在该项目上传，素材 `asset-20261017171743-th2kh` 达到 Active；原 Seedance 2.0 模型接受 asset URI 并返回任务。切流量前仍需确认成片及自有网关完整路径。
+
+生产源码对比还发现既有 MiniMax V2/type-58 定制并未进入当前仓库。本次将生产中的相同实现纳入版本控制，保留 MiniMax-H3 的 30 秒上限与路由映射，以免升级网关回退现有业务。
