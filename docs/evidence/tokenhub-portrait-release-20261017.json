@@ -1,0 +1,122 @@
+{
+  "checked_at": "2026-10-17T09:39:23.474785+00:00",
+  "source_commit": "fd0ffcccff595280ec3002890b01e48ce7f58904",
+  "image_archive_sha256": "9d42f2c124dc2bdaf9f62dc1c6da46cd1444e011f1ab18ef6e13a1676a3c96b2",
+  "deployment": {
+    "old_image": "bossip/new-api:fork-minimaxv2-20261010-h3dur30",
+    "old_image_id": "sha256:0233412fff852b3434eeaec3f8d56af68dbb1d94a7679f1a5d5606c0ea026abe",
+    "backup": "/opt/bossip/backups/newapi-portrait-20261017-fd0ffccc",
+    "created_at": "2026-10-17T09:24:57.615740+00:00",
+    "new_image": "bossip/new-api:portrait-20261017-fd0ffccc",
+    "activated_at": "2026-10-17T09:33:13.477006+00:00",
+    "channel_id": 128,
+    "portrait_settings": {
+      "tokenhub_portrait_enabled": true,
+      "tokenhub_portrait_project": "moligroup",
+      "tokenhub_portrait_omit_project": true
+    }
+  },
+  "container": {
+    "image": "bossip/new-api:portrait-20261017-fd0ffccc",
+    "image_id": "sha256:0071c01291d4c5433e85da0dfd283ac500e885a08a8393d4a6be7bb238f3a6fe",
+    "status": "running",
+    "restart_count": 0
+  },
+  "channel": {
+    "id": 128,
+    "type": 55,
+    "status": 1,
+    "base_url": "https://tokenhub.moligroup.com",
+    "models": "doubao-seedance-2-0-260128,doubao-seedance-2-0-fast-260128,doubao-seedance-2-5-260628",
+    "settings": {
+      "tokenhub_portrait_enabled": true,
+      "tokenhub_portrait_project": "moligroup",
+      "tokenhub_portrait_omit_project": true
+    }
+  },
+  "library_assets": [
+    {
+      "id": "asset-20261017173009-tg5hn",
+      "group_id": "group-20261017173009-7qp5s",
+      "type": "Image",
+      "status": "Active"
+    }
+  ],
+  "production_tasks": [
+    {
+      "task_id": "task_VdWoUTjHM6ngOEG9oC7KKdXWD2xJ8RpT",
+      "channel_id": 128,
+      "status": "SUCCESS",
+      "progress": "100%",
+      "quota": 1000000,
+      "failure": ""
+    }
+  ],
+  "canary": {
+    "task_id": "task_bGrokofonsM6CztR08Cm3etch6P8xBYL",
+    "status": "completed",
+    "media": {
+      "http_status": 200,
+      "bytes": 1588828,
+      "sha256": "11d8b616afe799ea9bb8ae75fd1ccc32c3ca1535fa1bcbf117ef5f05b5f8b597",
+      "duration_seconds": 4.042,
+      "tracks": [
+        {
+          "width": 720,
+          "height": 1280
+        }
+      ]
+    }
+  },
+  "production_acceptance": {
+    "task_id": "task_VdWoUTjHM6ngOEG9oC7KKdXWD2xJ8RpT",
+    "status": "completed",
+    "origin": "OpenBox gw2 backend using resolve_route/build_payload/submit/status",
+    "model": "doubao-seedance-2-0-260128",
+    "media": {
+      "bytes": 1430656,
+      "sha256": "2bf1d96fe90b79ade22670033f60a7748c6c1455d6f499d800147ca9a4997267",
+      "duration_seconds": 4.042,
+      "tracks": [
+        {
+          "width": 720,
+          "height": 1280
+        }
+      ]
+    }
+  },
+  "openbox_cutover": {
+    "environment": "Aliyun gw2",
+    "backend_image": "openbox-backend:20261016-video-material-cae33477-r2",
+    "gateway_base_url": "http://10.100.1.76:3000",
+    "provider": "tokenhub-library",
+    "models": [
+      "doubao-seedance-2-0-260128",
+      "doubao-seedance-2-0-fast-260128",
+      "doubao-seedance-2-5-260628"
+    ],
+    "config_sha256_before": "dc1f4b8a84701b48af5ae9ef9acc3ff483982d4ec091aae89a93148231087cdf",
+    "config_sha256_after": "7605ad4279d4ddc4fc78285e5b72a742aaf9fbcce052145f8f3973bfbef33f50",
+    "backup": "/opt/openbox/backups/tokenhub-portrait-20261017-fd0ffccc/openbox.json",
+    "guard": {
+      "active_leases": 0,
+      "in_flight_videos": 0,
+      "active_calls": 0
+    },
+    "backend_health": "healthy",
+    "public_environment_http_status": 200,
+    "wan_provider": "aliyun-video",
+    "minimax_h3_provider": "bossip"
+  },
+  "checks": {
+    "targeted_race_tests": "passed",
+    "model_service_task_adapters_regressions": "passed",
+    "scoped_go_vet": "passed",
+    "full_repository_tests": "baseline limitations recorded; not claimed passed",
+    "canary_container": "stopped; database and evidence retained",
+    "gateway_schema": "additive group/asset tables; existing tables retained",
+    "upstream_project_parameter": "omitted",
+    "expected_actual_project": "moligroup",
+    "supplier_invoice_verified": false
+  }
+}

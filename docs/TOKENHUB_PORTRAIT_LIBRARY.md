@@ -129,8 +129,24 @@ go vet ./service/tokenhubportrait ./relay/channel/task/sora ./controller ./route
 
 全仓回归存在基线限制：干净 main 同样有模型列表测试和 Claude 文件内容转换测试失败。根包需要先构建 web/classic/dist 与 web/default/dist 才能满足 go:embed，不能报告全仓测试通过。
 
-## 2026-10-17 上线验证
+## 2026-10-17 正式发布与验收
 
-省略 ProjectName 创建与查询均成功，真实项目为 moligroup。虚拟人像已在该项目上传，素材 `asset-20261017171743-th2kh` 达到 Active；原 Seedance 2.0 模型接受 asset URI 并返回任务。切流量前仍需确认成片及自有网关完整路径。
+已在阿里云 bossip-gw-1 发布 `bossip/new-api:portrait-20261017-fd0ffccc`（源码 fd0ffccc），并在渠道 128 启用虚拟素材库、省略 ProjectName、校验实际项目 moligroup。OpenBox 阿里云 gw2 的 Seedance 2.0 / Fast / 2.5 已改走 provider `tokenhub-library`，使用既有 BOSSIP 凭据与内网 new-api 地址。没有更换 OpenBox 镜像或其他模型绑定。
 
-生产源码对比还发现既有 MiniMax V2/type-58 定制并未进入当前仓库。本次将生产中的相同实现纳入版本控制，保留 MiniMax-H3 的 30 秒上限与路由映射，以免升级网关回退现有业务。
+验收完成：
+
+- 直接 TokenHub 省略 ProjectName，创建、查询、上传均成功；实际项目为 moligroup；素材 Active 后原模型生成成功。
+- 从生产数据库副本启动隔离新版网关，调用真实 `/v1/videos` 自动创建组、上传、等待 Active、生成、轮询、下载全部成功，成片 720×1280、4.042 秒。
+- 校验隔离环境与正式环境的渠道/令牌身份一致后，仅复用本次已验证的组和素材绑定缓存，不导入隔离环境的用户余额或任务。正式 OpenBox 后端使用配置解析与视频适配器提交，任务 `task_VdWoUTjHM6ngOEG9oC7KKdXWD2xJ8RpT` 已完成，成片下载和 MP4 元数据校验通过，720×1280、4.042 秒。
+- 2.5 / Fast 的生产路由已读回确认；本次实际付费出片验收使用 Seedance 2.0，没有宣称逐模型出片验证。
+- 切换前活跃租约、进行中视频、活跃通话均为 0；切换后 OpenBox backend healthy，公网 environment 200，new-api running 且重启计数 0。隔离容器已停止，保留证据与数据库。
+
+生产源码比对发现既有 MiniMax V2/type-58 定制未进入仓库，本次已纳入相同实现，保留 MiniMax-H3 的 30 秒上限及映射；相关适配器回归通过。Wan 仍走原 DashScope，MiniMax H3 仍走原网关渠道。未操作高德和 AWS 的 OpenBox 配置。
+
+冻结镜像包 SHA-256：`9d42f2c124dc2bdaf9f62dc1c6da46cd1444e011f1ab18ef6e13a1676a3c96b2`。完整脱敏记录见 [发布证据](evidence/tokenhub-portrait-release-20261017.json)。此前 10 月 16 日 default 项目的失败诊断记录保留作为历史，不能代表本次正式配置。
+
+回滚材料：
+
+- 网关配置、数据库备份与渠道快照：`/opt/bossip/backups/newapi-portrait-20261017-fd0ffccc/`，旧镜像 `bossip/new-api:fork-minimaxv2-20261010-h3dur30` 保留。
+- OpenBox 配置备份：`/opt/openbox/backups/tokenhub-portrait-20261017-fd0ffccc/openbox.json`。
+- 如需回滚，先在无活跃工作时恢复 OpenBox 原配置并重启 backend，再恢复网关 compose 镜像及渠道 settings；新增表、上游素材与已有成片保留，不自动删除资源或倒退整个业务数据库。
